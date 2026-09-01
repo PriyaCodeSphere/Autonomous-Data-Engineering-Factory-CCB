@@ -11,7 +11,7 @@
 
 services:
   - type: web
-    name: adef-demo
+    name: adef-demo-ccb
     runtime: python
     plan: free
     region: oregon                # switch to `frankfurt` / `singapore` if closer to you
