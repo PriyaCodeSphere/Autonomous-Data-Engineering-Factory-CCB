@@ -1,13 +1,28 @@
-"""Synthetic Test Data Agent — Faker-based, respects PII classification."""
+"""Synthetic Test Data Agent — Faker-based CC&B fixtures, respects PII classification.
+
+Produces small QA-friendly CSVs for a subset of the CC&B tables so QA teams
+can run the pipeline in an isolated environment without touching production PII.
+"""
 from __future__ import annotations
 
 import csv
 import random
-from datetime import timedelta
+from datetime import date, timedelta
 
 from faker import Faker
 
 from .base import Agent, RunContext
+
+
+N_PERSONS = 200
+N_ACCOUNTS = 200            # 1:1
+N_BILLS = 600               # 3 months
+N_PAYMENTS = 500
+
+CIS_DIVISIONS = ["BKLYN", "BRONX", "MHTN", "QNS", "WSTCH"]
+CUST_CLASSES = ["RES", "COM", "IND"]
+SA_TYPES = ["EL-RES", "EL-COM", "GS-RES", "GS-COM"]
+BILL_CYCLES = ["M01", "M02", "M03"]
 
 
 class SynthAgent(Agent):
@@ -17,82 +32,107 @@ class SynthAgent(Agent):
 
     async def run(self, ctx: RunContext) -> dict:
         self.started(ctx)
-        n_customers, n_orders, n_products = 500, 5_000, 200
 
         seed = 42
         random.seed(seed)
         fake = Faker("en_US")
         Faker.seed(seed)
 
-        self.emit(ctx, f"Seed={seed} · generating {n_customers} customers · {n_orders} orders · {n_products} products")
+        self.emit(ctx, f"Seed={seed} · generating {N_PERSONS} persons · "
+                       f"{N_ACCOUNTS} accounts · {N_BILLS} bills · {N_PAYMENTS} payments")
 
-        # Customers
-        customers_rows = []
-        for i in range(1, n_customers + 1):
-            customers_rows.append({
-                "customer_id": i,
-                "first_name": fake.first_name(),
-                "last_name":  fake.last_name(),
-                "email_address": fake.email(),
-                "phone_number":  fake.phone_number(),
-                "city":  fake.city(),
-                "state": fake.state_abbr(),
-                "postal_code": fake.postcode(),
-                "customer_segment": random.choice(["Homeowner", "Contractor", "Builder", "Architect"]),
+        # -- Person (PII from Faker; hashes will be applied at staging) --
+        persons = []
+        for i in range(1, N_PERSONS + 1):
+            div = random.choice(CIS_DIVISIONS)
+            persons.append({
+                "PER_ID":         f"9{i:09d}",
+                "PER_OR_BUS_FLG": random.choices(["P", "B"], weights=[0.9, 0.1])[0],
+                "LANGUAGE_CD":    "ENG",
+                "ADDRESS1":       fake.street_address(),
+                "CITY":           fake.city(),
+                "STATE":          "NY",
+                "POSTAL":         fake.zipcode_in_state("NY"),
+                "COUNTRY":        "USA",
+                "EMAILID":        fake.email(),
+                "HOUSE_TYPE":     random.choice(["SFR", "MFR", "APT"]),
+                "CIS_DIVISION":   div,
             })
-        p = _write_csv(ctx, ("synth", "customer.csv"), customers_rows)
-        self.artifact(ctx, "customer.csv", p, preview=_preview_csv(p))
+        p = _write_csv(ctx, ("synth", "person.csv"), persons)
+        self.artifact(ctx, "person.csv", p, preview=_preview_csv(p))
 
-        # Products
-        cats = ["Windows", "Patio Doors", "Entry Doors", "Storm Doors", "Accessories"]
-        product_rows = []
-        for i in range(1, n_products + 1):
-            price = round(max(12.5, min(11250.0, random.lognormvariate(6.0, 1.1))), 2)
-            product_rows.append({
-                "product_id": i,
-                "product_name": f"{random.choice(cats)} {fake.word().title()} {fake.random_int(100,9999)}",
-                "product_category": random.choice(cats),
-                "list_price": price,
-                "active_indicator": random.random() > 0.06,
+        # -- Account --
+        accounts = []
+        for i, per in enumerate(persons, start=1):
+            cust = "RES" if per["PER_OR_BUS_FLG"] == "P" else random.choice(["COM", "IND"])
+            accounts.append({
+                "ACCT_ID":       f"8{i:09d}",
+                "PER_ID":        per["PER_ID"],
+                "CIS_DIVISION":  per["CIS_DIVISION"],
+                "CUST_CL_CD":    cust,
+                "COLL_CL_CD":    f"{cust}-STD",
+                "BILL_CYC_CD":   random.choice(BILL_CYCLES),
+                "CURRENCY_CD":   "USD",
+                "SETUP_DT":      fake.date_between(start_date="-6y", end_date="-6M").isoformat(),
             })
-        p = _write_csv(ctx, ("synth", "product.csv"), product_rows)
-        self.artifact(ctx, "product.csv", p, preview=_preview_csv(p))
+        p = _write_csv(ctx, ("synth", "account.csv"), accounts)
+        self.artifact(ctx, "account.csv", p, preview=_preview_csv(p))
 
-        # Orders
-        cids = [c["customer_id"] for c in customers_rows]
-        pids = [p["product_id"] for p in product_rows]
-        order_rows = []
-        for i in range(1, n_orders + 1):
-            amount = round(max(5.0, min(98450.0, random.lognormvariate(6.1, 1.3))), 2)
-            discount = round(amount * random.uniform(0.02, 0.15), 2) if random.random() < 0.1 else 0.0
-            date = fake.date_between(start_date="-1y", end_date="today")
-            order_rows.append({
-                "order_id": i,
-                "customer_id": random.choice(cids),
-                "dealer_id":   random.randint(100, 999),
-                "product_id":  random.choice(pids),
-                "order_date":  date.isoformat(),
-                "order_status": random.choices(
-                    ["NEW", "PENDING", "SHIPPED", "DELIVERED", "CANCELLED"],
-                    weights=[6, 14, 30, 48, 2],
-                )[0],
-                "order_amount":    amount,
-                "discount_amount": discount,
+        # -- Bill (3 months per account) --
+        bill_rows = []
+        bill_seq = 0
+        for a in accounts:
+            base = 6.5 if a["CUST_CL_CD"] == "RES" else 8.0
+            for months_back in (1, 2, 3):
+                bill_seq += 1
+                if bill_seq > N_BILLS:
+                    break
+                amt = round(max(15.0, min(20_000.0, random.lognormvariate(base, 0.8))), 2)
+                bill_dt = date.today() - timedelta(days=30 * months_back)
+                bill_rows.append({
+                    "BILL_ID":            f"S-BILL{bill_seq:06d}",
+                    "ACCT_ID":            a["ACCT_ID"],
+                    "BILL_CYC_CD":        a["BILL_CYC_CD"],
+                    "BILL_STAT_FLG":      "50",
+                    "BILL_DT":            bill_dt.isoformat(),
+                    "DUE_DT":             (bill_dt + timedelta(days=20)).isoformat(),
+                    "LATE_PAY_CHARGE_SW": "N",
+                    "TOTAL_AMOUNT":       amt,
+                })
+        p = _write_csv(ctx, ("synth", "bill.csv"), bill_rows)
+        self.artifact(ctx, "bill.csv", p, preview=_preview_csv(p))
+
+        # -- Payment --
+        pay_rows = []
+        for i in range(1, N_PAYMENTS + 1):
+            b = random.choice(bill_rows)
+            pay_amt = round(float(b["TOTAL_AMOUNT"]) * random.choice([1.0, 1.0, 0.75, 1.10]), 2)
+            pay_dt = date.fromisoformat(b["BILL_DT"]) + timedelta(days=random.randint(1, 25))
+            pay_rows.append({
+                "PAY_ID":         f"S-PAY{i:06d}",
+                "ACCT_ID":        b["ACCT_ID"],
+                "BILL_ID":        b["BILL_ID"],
+                "PAY_AMT":        pay_amt,
+                "PAY_STATUS_FLG": "50",
+                "PAY_DT":         pay_dt.isoformat(),
+                "TENDER_TYPE_CD": random.choice(["ACH", "CHECK", "CARD"]),
             })
-        p = _write_csv(ctx, ("synth", "order.csv"), order_rows)
-        self.artifact(ctx, "order.csv", p, preview=_preview_csv(p))
+        p = _write_csv(ctx, ("synth", "payment.csv"), pay_rows)
+        self.artifact(ctx, "payment.csv", p, preview=_preview_csv(p))
 
-        # Generator config for reproducibility
+        # -- Generator config for reproducibility --
         cfg = (
-            "# testing/synth/dealer_sales.yml\n"
+            "# testing/synth/oracle_ccb.yml\n"
             f"seed: {seed}\n"
             "volume:\n"
-            f"  customer: {n_customers}\n"
-            f"  order:    {n_orders}\n"
-            f"  product:  {n_products}\n"
+            f"  person:  {N_PERSONS}\n"
+            f"  account: {N_ACCOUNTS}\n"
+            f"  bill:    {N_BILLS}\n"
+            f"  payment: {N_PAYMENTS}\n"
             "integrity:\n"
-            "  order.customer_id: {fk_to: customer.customer_id}\n"
-            "  order.product_id:  {fk_to: product.product_id}\n"
+            "  account.PER_ID: {fk_to: person.PER_ID}\n"
+            "  bill.ACCT_ID:   {fk_to: account.ACCT_ID}\n"
+            "  payment.BILL_ID:{fk_to: bill.BILL_ID}\n"
             "pii:\n"
             "  strategy: from_faker\n"
             "  locale: en_US\n"
@@ -102,12 +142,14 @@ class SynthAgent(Agent):
         self.artifact(ctx, "generator.yml", p, preview=cfg)
 
         ctx.outputs["synth"] = {
-            "customer_rows": n_customers,
-            "order_rows":    n_orders,
-            "product_rows":  n_products,
+            "person_rows":  N_PERSONS,
+            "account_rows": N_ACCOUNTS,
+            "bill_rows":    N_BILLS,
+            "payment_rows": N_PAYMENTS,
             "seed": seed,
         }
-        self.done(ctx, f"generated {n_customers + n_orders + n_products:,} synthetic rows")
+        total = N_PERSONS + N_ACCOUNTS + N_BILLS + N_PAYMENTS
+        self.done(ctx, f"generated {total:,} synthetic rows")
         return ctx.outputs["synth"]
 
 

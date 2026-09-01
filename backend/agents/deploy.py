@@ -26,7 +26,7 @@ class DeployAgent(Agent):
 
     async def run(self, ctx: RunContext) -> dict:
         self.started(ctx)
-        self.emit(ctx, "Triggering Azure DevOps pipeline `dealer-sales-crm-cd`…")
+        self.emit(ctx, "Triggering Azure DevOps pipeline `oracle-ccb-cd`…")
 
         results: list[dict] = []
         for stage_id, label, delay in PIPELINE_STAGES:
@@ -36,13 +36,12 @@ class DeployAgent(Agent):
                       payload={"stage": stage_id, "state": "done"})
             results.append({"stage": stage_id, "status": "done"})
 
-        # Prod approval gate
         decision = await self.wait_for_approval(
             ctx, "deploy",
             title="Change-advisory approval required",
-            body="Promote DealerSalesCRM to production. On approval, Fivetran connector "
-                 "is enabled, dbt models are promoted to DP_PROD, and Power BI dataset "
-                 "is certified.",
+            body="Promote Oracle CC&B to production. On approval, Fivetran connector "
+                 "is enabled, dbt models are promoted to DP_PROD, and Power BI "
+                 "'Customer 360 — Certified' dataset is certified.",
         )
         if not decision["approved"]:
             raise RuntimeError("Deployment rejected by CAB.")
@@ -68,15 +67,15 @@ class DeployAgent(Agent):
         summary = {"stages": results, "prod_certified": True, "finished_at": int(time.time())}
         ctx.write_json(("deploy", "run.json"), summary)
         ctx.outputs["deploy"] = summary
-        self.done(ctx, "DealerSalesCRM is certified in production")
+        self.done(ctx, "Oracle CC&B is certified in production")
         return summary
 
 
 def _render_pipeline_yaml() -> str:
-    return """# pipelines/azdo-dealer-sales.yml
+    return """# pipelines/azdo-oracle-ccb.yml
 trigger:
   branches: {include: [main]}
-  paths:    {include: [dbt/models/dealer_sales/*, infra/fivetran/dealer-sales-crm.yaml]}
+  paths:    {include: [dbt/models/ccb/*, infra/fivetran/oracle-ccb.yaml]}
 
 stages:
   - stage: Build
@@ -86,25 +85,25 @@ stages:
     jobs:
       - job: dq
         steps:
-          - script: dbt test --select dealer_sales --target dev
-          - script: great_expectations checkpoint run dealer_sales_full
+          - script: dbt test --select ccb --target dev
+          - script: great_expectations checkpoint run oracle_ccb_full
   - stage: DeployDev
     dependsOn: DQ
-    jobs: [{ job: deploy, steps: [{script: dbt run --target dev --select dealer_sales}] }]
+    jobs: [{ job: deploy, steps: [{script: dbt run --target dev --select ccb}] }]
   - stage: PromoteQA
     dependsOn: DeployDev
     jobs:
       - deployment: promoteQA
         environment: dp-qa
-        strategy: {runOnce: {deploy: {steps: [{script: dbt run --target qa --select dealer_sales}]}}}
+        strategy: {runOnce: {deploy: {steps: [{script: dbt run --target qa --select ccb}]}}}
   - stage: PromotePROD
     dependsOn: PromoteQA
     jobs:
       - deployment: promotePROD
         environment: dp-prod
         strategy: {runOnce: {deploy: {steps: [
-          {script: dbt run --target prod --select dealer_sales},
-          {script: fivetran-cli connector enable dealer_sales_crm},
-          {script: powerbi-cli dataset certify --name 'Dealer Sales - Certified'}
+          {script: dbt run --target prod --select ccb},
+          {script: fivetran-cli connector enable oracle_ccb},
+          {script: powerbi-cli dataset certify --name 'Customer 360 - Certified'}
         ]}}}
 """

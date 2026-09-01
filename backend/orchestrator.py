@@ -27,12 +27,12 @@ from .events import Event, bus
 
 DEFAULT_REQUEST: dict[str, Any] = {
     "business_ask": (
-        "Onboard the DealerSalesCRM source into the enterprise data platform. "
+        "Onboard the Oracle CC&B source into the enterprise data platform. "
         "Create ingestion configurations, Snowflake structures, dbt models, "
         "data quality controls, PII classifications, documentation, lineage, "
         "test data, and deployment artifacts."
     ),
-    "source_name": "DealerSalesCRM",
+    "source_name": "Oracle CC&B",
     "source_type": "REST API",
     "refresh":     "30 minutes",
     "target":      "Snowflake",
@@ -40,9 +40,11 @@ DEFAULT_REQUEST: dict[str, Any] = {
     "ingest":      "Fivetran",
     "bi":          "Power BI",
     "cicd":        "Azure DevOps",
-    "business_owner": "Dealer Sales COE",
+    "business_owner": "Customer Operations COE",
     "entities": [
-        {"name": "customer"}, {"name": "order"}, {"name": "product"},
+        {"name": "person"}, {"name": "account"}, {"name": "premise"},
+        {"name": "service_agreement"}, {"name": "meter"}, {"name": "bill"},
+        {"name": "payment"}, {"name": "customer_contact"},
     ],
 }
 
@@ -119,8 +121,8 @@ async def _run_pipeline(ctx: RunContext) -> None:
 
 
 DEFAULT_DRIFT = {
-    "entity":   "customer",
-    "column":   "phone_number",
+    "entity":   "person",
+    "column":   "POSTAL",
     "old_type": "STRING",
     "new_type": "NUMBER",
 }

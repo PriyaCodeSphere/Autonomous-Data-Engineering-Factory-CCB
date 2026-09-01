@@ -62,12 +62,10 @@ class PlannerAgent(Agent):
             self.emit(ctx, "LLM offline — using deterministic fallback plan", level="warn")
             plan = _fallback_plan()
 
-        # Basic normalisation
         plan.setdefault("approval_gates", ["pii", "review", "deploy"])
         plan.setdefault("tasks", [])
         plan.setdefault("risks", [])
 
-        # Stream reasoning
         for line in plan.get("reasoning", [])[:12]:
             self.emit(ctx, f"↳ {line}")
 
@@ -85,33 +83,33 @@ class PlannerAgent(Agent):
 
 def _fallback_plan() -> dict:
     return {
-        "summary": "Onboard DealerSalesCRM into the enterprise data platform end-to-end.",
+        "summary": "Onboard Oracle CC&B into the enterprise data platform end-to-end.",
         "reasoning": [
             "Metadata completeness check: PASS.",
-            "Detected PII columns in Customer entity — governance gate required.",
-            "Detected financial columns in Order/Product — masking in non-prod.",
+            "Detected PII columns in CI_PER (EMAILID, ADDRESS1) — governance gate required.",
+            "Detected financial columns in CI_BILL / CI_PAY — masking in non-prod.",
             "Selected 10 reusable Cognizant patterns.",
             "Decomposed into ordered task graph with 3 parallel branches.",
             "Attached enterprise policies: dbt style guide v2.1, retention 7y.",
         ],
         "tasks": [
-            {"id": "pipe_config",       "title": "Generate Fivetran connector + landing schema",  "agent": "pipe",    "depends_on": []},
-            {"id": "profile_sample",    "title": "Profile source columns and detect anomalies",   "agent": "profile", "depends_on": ["pipe_config"]},
-            {"id": "dbt_sources",       "title": "Emit dbt sources.yml",                          "agent": "dbt",     "depends_on": ["pipe_config"]},
-            {"id": "dbt_staging",       "title": "Emit dbt staging models (3)",                   "agent": "dbt",     "depends_on": ["dbt_sources"]},
-            {"id": "dbt_marts",         "title": "Emit dbt mart models + schema tests",           "agent": "dbt",     "depends_on": ["dbt_staging"]},
-            {"id": "dq_rules",          "title": "Generate DQ rules from profile output",         "agent": "dq",      "depends_on": ["profile_sample", "dbt_marts"]},
-            {"id": "pii_classify",      "title": "Classify PII and propose masking policies",     "agent": "pii",     "depends_on": ["profile_sample"]},
-            {"id": "synth_fixtures",    "title": "Generate masked synthetic fixtures",            "agent": "synth",   "depends_on": ["pii_classify"]},
-            {"id": "docs_readme",       "title": "Write README + catalog + lineage",              "agent": "docs",    "depends_on": ["dbt_marts", "pii_classify"]},
-            {"id": "pr_review",         "title": "Open PR and run policy checks",                 "agent": "review",  "depends_on": ["docs_readme", "dq_rules", "synth_fixtures"]},
-            {"id": "deploy_prod",       "title": "Run Azure DevOps pipeline to production",       "agent": "deploy",  "depends_on": ["pr_review"]},
+            {"id": "pipe_config",       "title": "Generate Fivetran connector + landing schema",   "agent": "pipe",    "depends_on": []},
+            {"id": "profile_sample",    "title": "Profile source columns and detect anomalies",    "agent": "profile", "depends_on": ["pipe_config"]},
+            {"id": "dbt_sources",       "title": "Emit dbt sources.yml",                           "agent": "dbt",     "depends_on": ["pipe_config"]},
+            {"id": "dbt_staging",       "title": "Emit dbt staging models (8)",                    "agent": "dbt",     "depends_on": ["dbt_sources"]},
+            {"id": "dbt_marts",         "title": "Emit dbt mart models + schema tests",            "agent": "dbt",     "depends_on": ["dbt_staging"]},
+            {"id": "dq_rules",          "title": "Generate DQ rules from profile output",          "agent": "dq",      "depends_on": ["profile_sample", "dbt_marts"]},
+            {"id": "pii_classify",      "title": "Classify PII and propose masking policies",      "agent": "pii",     "depends_on": ["profile_sample"]},
+            {"id": "synth_fixtures",    "title": "Generate masked synthetic fixtures",             "agent": "synth",   "depends_on": ["pii_classify"]},
+            {"id": "docs_readme",       "title": "Write README + catalog + lineage",               "agent": "docs",    "depends_on": ["dbt_marts", "pii_classify"]},
+            {"id": "pr_review",         "title": "Open PR and run policy checks",                  "agent": "review",  "depends_on": ["docs_readme", "dq_rules", "synth_fixtures"]},
+            {"id": "deploy_prod",       "title": "Run Azure DevOps pipeline to production",        "agent": "deploy",  "depends_on": ["pr_review"]},
         ],
         "approval_gates": ["pii", "review", "deploy"],
         "risks": [
-            "PII columns in Customer require steward approval before publish.",
-            "Rate limit for source REST API not declared — will be inferred and monitored.",
-            "Historical currency data untyped in source — DQ will add ≥ 0 checks.",
+            "PII columns in CI_PER (name, email, address) require steward approval before publish.",
+            "CC&B REST API rate limit not declared — will be inferred and monitored.",
+            "Legacy CI_BILL amounts loosely-typed at source — DQ will add ≥ 0 checks.",
         ],
         "estimated_wall_time_seconds": 460,
     }

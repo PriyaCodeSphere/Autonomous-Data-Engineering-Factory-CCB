@@ -318,7 +318,7 @@ hr.sep{border:none;border-top:1px solid var(--line-soft);margin:14px 0}
 
     <div class="mini">
       <h5>Request context</h5>
-      <div class="kv"><span>Source</span><span>DealerSalesCRM</span></div>
+      <div class="kv"><span>Source</span><span>Oracle CC&amp;B</span></div>
       <div class="kv"><span>Type</span><span>REST API</span></div>
       <div class="kv"><span>Refresh</span><span>Every 30 min</span></div>
       <div class="kv"><span>Target</span><span>Snowflake</span></div>
@@ -585,7 +585,7 @@ function renderIntake(main){
         <h3>Onboarding request</h3>
         <div class="card-sub">This request will be picked up by the orchestrator and decomposed into a multi-agent execution plan.</div>
         <div class="field-label">Business ask</div>
-        <textarea class="textbox" id="reqText" spellcheck="false">Onboard the DealerSalesCRM source into the enterprise data platform. Create ingestion configurations, Snowflake structures, dbt models, data quality controls, PII classifications, documentation, lineage, test data, and deployment artifacts.</textarea>
+        <textarea class="textbox" id="reqText" spellcheck="false">Onboard the Oracle CC&amp;B source into the enterprise data platform. Create ingestion configurations, Snowflake structures, dbt models, data quality controls, PII classifications, documentation, lineage, test data, and deployment artifacts.</textarea>
 
         <div class="grid-2 mt-16">
           <div>
@@ -594,7 +594,7 @@ function renderIntake(main){
           </div>
           <div>
             <div class="field-label">Business owner</div>
-            <div class="pill" style="width:100%;justify-content:flex-start">Dealer Sales Analytics COE</div>
+            <div class="pill" style="width:100%;justify-content:flex-start">Customer Operations COE</div>
           </div>
           <div>
             <div class="field-label">Target environment</div>
@@ -608,7 +608,7 @@ function renderIntake(main){
 
         <hr class="sep">
         <div class="row" style="justify-content:space-between;align-items:center">
-          <div class="text-sm muted">All artifacts will be committed to <code>ado://data-platform/dealer-sales-crm</code></div>
+          <div class="text-sm muted">All artifacts will be committed to <code>ado://data-platform/oracle-ccb</code></div>
           <button class="btn accent" onclick="startWorkflow()">▶ Start agentic onboarding</button>
         </div>
       </div>
@@ -620,8 +620,8 @@ function renderIntake(main){
         <div class="request-card">
           <div class="row" style="justify-content:space-between;align-items:flex-start;margin-bottom:10px">
             <div>
-              <h4>DealerSalesCRM · REST API</h4>
-              <p class="text-sm">3 entities · 30 fields · 30-min refresh cadence</p>
+              <h4>Oracle CC&amp;B · REST API</h4>
+              <p class="text-sm">8 core entities · ~90 fields · 30-min refresh cadence</p>
             </div>
             <span class="badge info">Prebuilt request card</span>
           </div>
@@ -629,12 +629,12 @@ function renderIntake(main){
           <table class="tbl">
             <tr><th>Layer</th><th>Component</th></tr>
             <tr><td>Ingestion</td><td>Fivetran custom REST connector</td></tr>
-            <tr><td>Raw</td><td>Snowflake <code>RAW_DEALER_SALES</code></td></tr>
-            <tr><td>Staging</td><td>dbt <code>stg_dealer_sales__*</code></td></tr>
-            <tr><td>Marts</td><td>dbt <code>dim_customer / dim_product / fct_order</code></td></tr>
+            <tr><td>Raw</td><td>Snowflake <code>RAW_CCB</code></td></tr>
+            <tr><td>Staging</td><td>dbt <code>stg_ccb__*</code></td></tr>
+            <tr><td>Marts</td><td>dbt <code>dim_customer_360 / dim_meter / fct_bill / fct_payment</code></td></tr>
             <tr><td>Governance</td><td>Enterprise Data Catalog · PII tagging</td></tr>
             <tr><td>Consumption</td><td>Power BI · certified dataset</td></tr>
-            <tr><td>CI/CD</td><td>Azure DevOps pipeline <code>dealer-sales-crm-cd</code></td></tr>
+            <tr><td>CI/CD</td><td>Azure DevOps pipeline <code>oracle-ccb-cd</code></td></tr>
           </table>
         </div>
 
@@ -654,11 +654,16 @@ function renderIntake(main){
 
     <div class="card">
       <h3>Source entities</h3>
-      <div class="card-sub">Metadata declared in the request; will be re-verified by the Data Profiling Agent against the live source.</div>
-      <div class="grid-3">
-        ${entityCard('Customer', CUSTOMER_FIELDS)}
-        ${entityCard('Order', ORDER_FIELDS)}
-        ${entityCard('Product', PRODUCT_FIELDS)}
+      <div class="card-sub">Eight CC&amp;B tables declared in the request; will be re-verified by the Data Profiling Agent against the live source.</div>
+      <div class="grid-4">
+        ${entityCard('CI_PER (Person)',            PERSON_FIELDS)}
+        ${entityCard('CI_ACCT (Account)',          ACCOUNT_FIELDS)}
+        ${entityCard('CI_PREM (Premise)',          PREMISE_FIELDS)}
+        ${entityCard('CI_SA (Service Agreement)',  SA_FIELDS)}
+        ${entityCard('CI_MTR (Meter)',             METER_FIELDS)}
+        ${entityCard('CI_BILL (Bill)',             BILL_FIELDS)}
+        ${entityCard('CI_PAY (Payment)',           PAY_FIELDS)}
+        ${entityCard('CI_CC (Customer Contact)',   CC_FIELDS)}
       </div>
     </div>
 
@@ -670,21 +675,47 @@ function renderIntake(main){
   `);
 }
 
-const CUSTOMER_FIELDS = [
-  ['customer_id','NUMBER','PK'],['first_name','STRING','PII'],['last_name','STRING','PII'],
-  ['email_address','STRING','PII'],['phone_number','STRING','PII'],['street_address','STRING','PII'],
-  ['city','STRING','Quasi'],['state','STRING','Public'],['postal_code','STRING','Quasi'],
-  ['customer_segment','STRING','Public'],['created_timestamp','TIMESTAMP','Public'],['modified_timestamp','TIMESTAMP','Public']
+const PERSON_FIELDS = [
+  ['PER_ID','STRING','PK'],['PER_OR_BUS_FLG','STRING','Public'],['LANGUAGE_CD','STRING','Public'],
+  ['ADDRESS1','STRING','PII'],['CITY','STRING','Quasi'],['STATE','STRING','Public'],
+  ['POSTAL','STRING','Quasi'],['EMAILID','STRING','PII'],['HOUSE_TYPE','STRING','Public'],
+  ['MODIFIED_DTTM','TIMESTAMP','Public']
 ];
-const ORDER_FIELDS = [
-  ['order_id','NUMBER','PK'],['customer_id','NUMBER','FK'],['dealer_id','NUMBER','FK'],
-  ['product_id','NUMBER','FK'],['order_date','DATE','Public'],['order_status','STRING','Public'],
-  ['order_amount','NUMBER','Confidential'],['discount_amount','NUMBER','Confidential'],['modified_timestamp','TIMESTAMP','Public']
+const ACCOUNT_FIELDS = [
+  ['ACCT_ID','STRING','PK'],['PER_ID','STRING','FK'],['CIS_DIVISION','STRING','Public'],
+  ['CUST_CL_CD','STRING','Public'],['COLL_CL_CD','STRING','Public'],['BILL_CYC_CD','STRING','Public'],
+  ['SETUP_DT','DATE','Public'],['MAILING_PREM_ID','STRING','FK'],['MODIFIED_DTTM','TIMESTAMP','Public']
 ];
-const PRODUCT_FIELDS = [
-  ['product_id','NUMBER','PK'],['product_name','STRING','Public'],['product_category','STRING','Public'],
-  ['product_family','STRING','Public'],['list_price','NUMBER','Confidential'],['active_indicator','BOOLEAN','Public'],
-  ['modified_timestamp','TIMESTAMP','Public']
+const PREMISE_FIELDS = [
+  ['PREM_ID','STRING','PK'],['CIS_DIVISION','STRING','Public'],['ADDRESS1','STRING','PII'],
+  ['CITY','STRING','Quasi'],['STATE','STRING','Public'],['POSTAL','STRING','Quasi'],
+  ['PREM_TYPE_CD','STRING','Public'],['MR_CYC_CD','STRING','Public'],['MODIFIED_DTTM','TIMESTAMP','Public']
+];
+const SA_FIELDS = [
+  ['SA_ID','STRING','PK'],['ACCT_ID','STRING','FK'],['SA_TYPE_CD','STRING','Public'],
+  ['SA_STATUS_FLG','STRING','Public'],['CHAR_PREM_ID','STRING','FK'],['START_DT','DATE','Public'],
+  ['END_DT','DATE','Public'],['HIGH_BILL_AMT','NUMBER','Confidential'],['MODIFIED_DTTM','TIMESTAMP','Public']
+];
+const METER_FIELDS = [
+  ['MTR_ID','STRING','PK'],['SA_ID','STRING','FK'],['BADGE_NBR','STRING','Public'],
+  ['SERIAL_NBR','STRING','Public'],['MTR_TYPE_CD','STRING','Public'],['MFG_CD','STRING','Public'],
+  ['MODEL_CD','STRING','Public'],['RECEIVE_DT','DATE','Public'],['MODIFIED_DTTM','TIMESTAMP','Public']
+];
+const BILL_FIELDS = [
+  ['BILL_ID','STRING','PK'],['ACCT_ID','STRING','FK'],['BILL_CYC_CD','STRING','Public'],
+  ['BILL_STAT_FLG','STRING','Public'],['BILL_DT','DATE','Public'],['DUE_DT','DATE','Public'],
+  ['LATE_PAY_CHARGE_SW','STRING','Public'],['TOTAL_AMOUNT','NUMBER','Confidential'],
+  ['MODIFIED_DTTM','TIMESTAMP','Public']
+];
+const PAY_FIELDS = [
+  ['PAY_ID','STRING','PK'],['ACCT_ID','STRING','FK'],['BILL_ID','STRING','FK'],
+  ['PAY_AMT','NUMBER','Confidential'],['PAY_STATUS_FLG','STRING','Public'],['PAY_DT','DATE','Public'],
+  ['TENDER_TYPE_CD','STRING','Public'],['MODIFIED_DTTM','TIMESTAMP','Public']
+];
+const CC_FIELDS = [
+  ['CC_ID','STRING','PK'],['ACCT_ID','STRING','FK'],['PER_ID','STRING','FK'],
+  ['CC_TYPE_CD','STRING','Public'],['CC_DTTM','TIMESTAMP','Public'],['CC_STATUS_FLG','STRING','Public'],
+  ['CONTACT_METH_FLG','STRING','Public'],['MESSAGE_SUBJECT','STRING','Public'],['USER_ID','STRING','Public']
 ];
 
 function entityCard(name, fields){
@@ -732,7 +763,7 @@ function startWorkflow(){
   state.completed.add('intake');
   document.getElementById('sessTs').textContent = new Date().toLocaleTimeString();
   navigate('plan');
-  addLog('Orchestrator','Received onboarding request for DealerSalesCRM. Decomposing into task graph…','info');
+  addLog('Orchestrator','Received onboarding request for Oracle CC&amp;B. Decomposing into task graph…','info');
 }
 
 /* ==================================================================
@@ -787,7 +818,7 @@ function renderPlan(main){
   // Stream a few realistic log lines
   const stream = document.getElementById('streamPlan');
   const seq = [
-    ['Solution Planning','Parsing intake payload. Fields identified: source_name, type, entities[3], target=Snowflake, transform=dbt.'],
+    ['Solution Planning','Parsing intake payload. Fields identified: source_name, type, entities[8], target=Snowflake, transform=dbt.'],
     ['Solution Planning','Metadata completeness check: PASS (all mandatory attributes present).'],
     ['Solution Planning','Selecting reusable Cognizant patterns: Virtual Data Engineer, Profiling, DQ, PII, Coding, Docs, Testing, DevOps.'],
     ['Solution Planning','Building task graph. 24 tasks · 3 parallel branches identified.'],
@@ -828,22 +859,21 @@ function renderDag(){
 function renderReasoning(){
   return `<div class="code">${escape(
 `> intake.parse()
-  ✓ source_name = "DealerSalesCRM"
+  ✓ source_name = "Oracle CC&amp;B"
   ✓ source_type = "REST API"
   ✓ target      = "Snowflake"
   ✓ transform   = "dbt"
   ✓ ingest      = "Fivetran"
-  ✓ entities    = ["Customer", "Order", "Product"]  (30 fields)
+  ✓ entities    = ["person","account","premise","service_agreement","meter","bill","payment","customer_contact"]  (~90 fields)
 
 > policy.check(source_type="REST API", target="Snowflake")
   ↳ pattern="Fivetran custom REST connector"
-  ↳ landing_schema="RAW_DEALER_SALES"
+  ↳ landing_schema="RAW_CCB"
   ↳ SLA=30m refresh, <15m lag
 
 > risk.identify()
-  ⚠ PII columns detected in Customer: first_name, last_name, email_address,
-    phone_number, street_address, city, postal_code
-  ⚠ Financial columns in Order/Product: order_amount, discount_amount, list_price
+  ⚠ PII columns detected in CI_PER: EMAILID, ADDRESS1, GEO_CODE, POSTAL
+  ⚠ Financial columns in CI_BILL / CI_PAY / CI_SA: TOTAL_AMOUNT, PAY_AMT, HIGH_BILL_AMT
   → require Data Governance & Classification Agent
   → require masked synthetic data for lower envs
 
@@ -851,8 +881,8 @@ function renderReasoning(){
   1. pipe.build_fivetran_connector
   2. pipe.provision_landing_schema
   3. dbt.generate_sources
-  4. dbt.generate_staging_models (x3)
-  5. dbt.generate_marts (dim_customer, dim_product, fct_order)
+  4. dbt.generate_staging_models (x8: person, account, premise, service_agreement, meter, bill, payment, customer_contact)
+  5. dbt.generate_marts (dim_customer_360, dim_meter, fct_bill, fct_payment)
   6. profile.run_column_stats (parallel with dbt.staging)
   7. dq.generate_rules (uses profile output)
   8. pii.classify_and_tag
@@ -870,10 +900,10 @@ function renderReasoning(){
 const PLAN_JSON = `{
   "request_id": "ENG-4821",
   "source": {
-    "name": "DealerSalesCRM",
+    "name": "Oracle CC&amp;B",
     "type": "REST API",
     "refresh": "PT30M",
-    "entities": ["Customer","Order","Product"]
+    "entities": ["person","account","premise","service_agreement","meter","bill","payment","customer_contact"]
   },
   "target": {
     "warehouse": "Snowflake",
@@ -913,7 +943,7 @@ function renderPipeline(main){
   main.insertAdjacentHTML('beforeend', `
     <div class="grid-4">
       ${kpi('Connector','custom-rest','Fivetran')}
-      ${kpi('Landing schema','RAW_DEALER_SALES','Snowflake')}
+      ${kpi('Landing schema','RAW_CCB','Snowflake')}
       ${kpi('Sync mode','Incremental','key=modified_timestamp')}
       ${kpi('SLA','30 min','with alert if > 15 min lag')}
     </div>
@@ -939,7 +969,7 @@ function renderPipeline(main){
       ${checkList([
         ['ok','Fivetran connector schema validates against v3 spec'],
         ['ok','Landing schema uses enterprise naming standard <code>RAW_&lt;DOMAIN&gt;</code>'],
-        ['ok','Incremental key <code>modified_timestamp</code> present in all 3 entities'],
+        ['ok','Incremental key <code>MODIFIED_DTTM</code> present in all 8 entities'],
         ['ok','Secrets encrypted with the platform KMS key <code>alias/data-platform</code>'],
         ['ok','Cost guardrail: warehouse XSMALL, auto-suspend 60s'],
         ['warn','Rate limit for source REST API not yet declared — inferred from historical peers (300 req/min)'],
@@ -959,9 +989,9 @@ function renderPipeline(main){
   `);
   wireTabs(main);
 }
-const FIVETRAN_YAML = `# infra/fivetran/dealer-sales-crm.yaml
+const FIVETRAN_YAML = `# infra/fivetran/oracle-ccb.yaml
 version: 3
-schema: RAW_DEALER_SALES
+schema: RAW_CCB
 destination:
   type: snowflake
   account: enterprise-prod.us-east-2.aws
@@ -969,43 +999,67 @@ destination:
   database: DP_RAW
   role: R_FIVETRAN_LOADER
 source:
-  name: dealer_sales_crm
+  name: oracle_ccb
   type: rest_api_custom
   paginator: cursor
   auth:
     type: oauth2_client_credentials
-    secret_ref: arn:aws:secretsmanager:us-east-2:...:dealer-sales/oauth
+    secret_ref: arn:aws:secretsmanager:us-east-2:...:oracle-ccb/oauth
   streams:
-    - name: customer
-      endpoint: /v1/customers
-      primary_key: [customer_id]
-      cursor_field: modified_timestamp
-    - name: order
-      endpoint: /v1/orders
-      primary_key: [order_id]
-      cursor_field: modified_timestamp
-    - name: product
-      endpoint: /v1/products
-      primary_key: [product_id]
-      cursor_field: modified_timestamp
+    - name: person
+      endpoint: /v1/persons
+      primary_key: [PER_ID]
+      cursor_field: MODIFIED_DTTM
+    - name: account
+      endpoint: /v1/accounts
+      primary_key: [ACCT_ID]
+      cursor_field: MODIFIED_DTTM
+    - name: premise
+      endpoint: /v1/premises
+      primary_key: [PREM_ID]
+      cursor_field: MODIFIED_DTTM
+    - name: service_agreement
+      endpoint: /v1/service_agreements
+      primary_key: [SA_ID]
+      cursor_field: MODIFIED_DTTM
+    - name: meter
+      endpoint: /v1/meters
+      primary_key: [MTR_ID]
+      cursor_field: MODIFIED_DTTM
+    - name: bill
+      endpoint: /v1/bills
+      primary_key: [BILL_ID]
+      cursor_field: MODIFIED_DTTM
+    - name: payment
+      endpoint: /v1/payments
+      primary_key: [PAY_ID]
+      cursor_field: MODIFIED_DTTM
+    - name: customer_contact
+      endpoint: /v1/customer_contacts
+      primary_key: [CC_ID]
+      cursor_field: MODIFIED_DTTM
 schedule:
   frequency: 30m
   alert_if_lag_over: 15m
 tags:
-  domain: dealer_sales
-  owner: dealer_sales_coe@enterprise.example.com
+  domain: customer_billing
+  owner: customer_ops_coe@coned.com
   data_class: mixed_pii_public
 `;
 const CONNECTOR_PY = `# infra/fivetran/custom_connector/connector.py
-"""DealerSalesCRM REST paginator. Cognizant Virtual Data Engineer pattern.
+"""Oracle CC&amp;B REST paginator. Cognizant Virtual Data Engineer pattern.
 Generated. Do not edit by hand — run \`agents run pipeline\` to regenerate.
 """
 from fivetran_sdk import Connector, Schema, Sync, Cursor
 
-STREAMS = ["customer", "order", "product"]
+STREAMS = ["person","account","premise","service_agreement","meter","bill","payment","customer_contact"]
+PRIMARY_KEYS = {
+    "person":"PER_ID","account":"ACCT_ID","premise":"PREM_ID","service_agreement":"SA_ID",
+    "meter":"MTR_ID","bill":"BILL_ID","payment":"PAY_ID","customer_contact":"CC_ID",
+}
 
 def schema():
-    return [Schema.stream(s, primary_key=[f"{s}_id"]) for s in STREAMS]
+    return [Schema.stream(s, primary_key=[PRIMARY_KEYS[s]]) for s in STREAMS]
 
 def update(config, state):
     for stream in STREAMS:
@@ -1019,20 +1073,20 @@ def update(config, state):
             cursor = r.get("max_modified_ts", cursor)
         yield Cursor.checkpoint({stream: cursor})
 `;
-const LANDING_SQL = `-- infra/snowflake/landing/dealer_sales_crm.sql
-CREATE SCHEMA IF NOT EXISTS DP_RAW.RAW_DEALER_SALES
-  WITH MANAGED ACCESS COMMENT = 'Landing schema for DealerSalesCRM';
+const LANDING_SQL = `-- infra/snowflake/landing/oracle_ccb.sql
+CREATE SCHEMA IF NOT EXISTS DP_RAW.RAW_CCB
+  WITH MANAGED ACCESS COMMENT = 'Landing schema for Oracle CC&amp;B';
 
-GRANT USAGE ON SCHEMA DP_RAW.RAW_DEALER_SALES TO ROLE R_DBT_TRANSFORMER;
-GRANT USAGE ON SCHEMA DP_RAW.RAW_DEALER_SALES TO ROLE R_DATA_STEWARD;
+GRANT USAGE ON SCHEMA DP_RAW.RAW_CCB TO ROLE R_DBT_TRANSFORMER;
+GRANT USAGE ON SCHEMA DP_RAW.RAW_CCB TO ROLE R_DATA_STEWARD;
 
 -- Tables are auto-created by Fivetran on first sync.
 -- Table-level object tagging applied by the PII Classification Agent.
-ALTER SCHEMA DP_RAW.RAW_DEALER_SALES
+ALTER SCHEMA DP_RAW.RAW_CCB
   SET TAG governance.retention = '7Y',
           governance.pii_masked_nonprod = 'true';
 `;
-const SECRETS_ENC = `# infra/secrets/dealer-sales-crm.tfvars.enc
+const SECRETS_ENC = `# infra/secrets/oracle-ccb.tfvars.enc
 # sops-encrypted · re-key with: sops updatekeys
 oauth_client_id     = "ENC[AES256_GCM,data:...,tag:...]"
 oauth_client_secret = "ENC[AES256_GCM,data:...,tag:...]"
@@ -1055,7 +1109,7 @@ function renderDbt(main){
     </div>
     <div class="card">
       <h3>Generated Snowflake &amp; dbt code</h3>
-      <div class="card-sub">Preview of representative artifacts. The full tree is committed to <code>dbt/models/dealer_sales/</code>.</div>
+      <div class="card-sub">Preview of representative artifacts. The full tree is committed to <code>dbt/models/ccb/</code>.</div>
       <div class="tabs">
         <div class="tab active" data-tab="src">sources.yml</div>
         <div class="tab" data-tab="stg">stg_customer.sql</div>
@@ -1096,12 +1150,12 @@ function renderDbt(main){
   wireTabs(main);
 }
 
-const SOURCES_YML = `# dbt/models/dealer_sales/sources.yml
+const SOURCES_YML = `# dbt/models/ccb/sources.yml
 version: 2
 sources:
-  - name: dealer_sales_crm
+  - name: oracle_ccb
     database: DP_RAW
-    schema: RAW_DEALER_SALES
+    schema: RAW_CCB
     loader: fivetran
     loaded_at_field: _fivetran_synced
     freshness:
@@ -1121,23 +1175,23 @@ sources:
           - name: customer_id
             tests:
               - relationships:
-                  to: source('dealer_sales_crm','customer')
+                  to: source('oracle_ccb','customer')
                   field: customer_id
       - name: product
         columns:
           - name: product_id
             tests: [unique, not_null]
 `;
-const STG_CUSTOMER = `-- dbt/models/dealer_sales/staging/stg_dealer_sales__customer.sql
+const STG_CUSTOMER = `-- dbt/models/ccb/staging/stg_ccb__customer.sql
 {{ config(
     materialized='incremental',
     unique_key='customer_id',
     on_schema_change='append_new_columns',
-    tags=['dealer_sales','staging','pii']
+    tags=['ccb','staging','pii']
 ) }}
 
 with src as (
-    select * from {{ source('dealer_sales_crm','customer') }}
+    select * from {{ source('oracle_ccb','customer') }}
     {% if is_incremental() %}
       where modified_timestamp > (select coalesce(max(modified_timestamp),'1900-01-01') from {{ this }})
     {% endif %}
@@ -1162,14 +1216,14 @@ renamed as (
 )
 select * from renamed
 `;
-const DIM_CUSTOMER = `-- dbt/models/dealer_sales/marts/dim_customer.sql
+const DIM_CUSTOMER = `-- dbt/models/ccb/marts/dim_customer.sql
 {{ config(
     materialized='table',
     cluster_by=['customer_key'],
-    tags=['dealer_sales','marts']
+    tags=['ccb','marts']
 ) }}
 
-with s as (select * from {{ ref('stg_dealer_sales__customer') }}),
+with s as (select * from {{ ref('stg_ccb__customer') }}),
      g as (select * from {{ ref('geo_ref_state') }})
 
 select
@@ -1186,14 +1240,14 @@ select
 from s
 left join g on s.state = g.state_code
 `;
-const FCT_ORDER = `-- dbt/models/dealer_sales/marts/fct_order.sql
+const FCT_ORDER = `-- dbt/models/ccb/marts/fct_order.sql
 {{ config(
     materialized='incremental',
     unique_key='order_key',
-    tags=['dealer_sales','marts','fact']
+    tags=['ccb','marts','fact']
 ) }}
 
-with o as (select * from {{ ref('stg_dealer_sales__order') }}),
+with o as (select * from {{ ref('stg_ccb__order') }}),
      c as (select customer_key from {{ ref('dim_customer') }}),
      p as (select product_key   from {{ ref('dim_product') }})
 
@@ -1220,7 +1274,7 @@ const MACRO_HASH = `-- dbt/macros/hash_pii.sql (Cognizant reusable macro)
   end
 {% endmacro %}
 `;
-const DBT_SCHEMA_YML = `# dbt/models/dealer_sales/schema.yml
+const DBT_SCHEMA_YML = `# dbt/models/ccb/schema.yml
 version: 2
 models:
   - name: dim_customer
@@ -1325,7 +1379,7 @@ function renderProfile(main){
     <div class="approval">
       <div class="lft"><div class="ico">▶</div>
         <div><strong>Profile complete · handing to DQ + PII agents</strong>
-        <div class="text-sm muted">Profile artifact <code>profile-dealer-sales-v1.json</code> published to fabric.</div></div>
+        <div class="text-sm muted">Profile artifact <code>profile-oracle-ccb-v1.json</code> published to fabric.</div></div>
       </div>
       <button class="btn" onclick="markAgentDone('profile');markDone('profile')">Continue to Data Quality Rules →</button>
     </div>
@@ -1355,17 +1409,17 @@ function renderDQ(main){
 
     <div class="card">
       <h3>Data quality rule catalog</h3>
-      <div class="card-sub">Rules include the profiler-inferred candidates plus the enterprise's mandatory domain rules for Dealer Sales.</div>
+      <div class="card-sub">Rules include the profiler-inferred candidates plus the enterprise's mandatory domain rules for Customer Billing.</div>
       <table class="tbl">
         <thead><tr><th>Rule ID</th><th>Entity.Column</th><th>Expectation</th><th>Severity</th><th>Owner</th></tr></thead>
         <tbody>
-          <tr><td class="mono">DQ-001</td><td class="mono">customer.customer_id</td><td>unique · not_null</td><td><span class="tag pii">Blocker</span></td><td>Dealer Sales COE</td></tr>
-          <tr><td class="mono">DQ-002</td><td class="mono">customer.email_address</td><td>null_pct &lt; 0.5%</td><td><span class="tag pii-quasi">Warn</span></td><td>Dealer Sales COE</td></tr>
-          <tr><td class="mono">DQ-003</td><td class="mono">order.order_id</td><td>unique · not_null</td><td><span class="tag pii">Blocker</span></td><td>Dealer Sales COE</td></tr>
+          <tr><td class="mono">DQ-001</td><td class="mono">customer.customer_id</td><td>unique · not_null</td><td><span class="tag pii">Blocker</span></td><td>Customer Operations COE</td></tr>
+          <tr><td class="mono">DQ-002</td><td class="mono">customer.email_address</td><td>null_pct &lt; 0.5%</td><td><span class="tag pii-quasi">Warn</span></td><td>Customer Operations COE</td></tr>
+          <tr><td class="mono">DQ-003</td><td class="mono">order.order_id</td><td>unique · not_null</td><td><span class="tag pii">Blocker</span></td><td>Customer Operations COE</td></tr>
           <tr><td class="mono">DQ-004</td><td class="mono">order.customer_id</td><td>foreign key → dim_customer</td><td><span class="tag pii">Blocker</span></td><td>Data Platform</td></tr>
           <tr><td class="mono">DQ-005</td><td class="mono">order.order_amount</td><td>≥ 0</td><td><span class="tag pii">Blocker</span></td><td>Finance</td></tr>
           <tr><td class="mono">DQ-006</td><td class="mono">order.discount_amount</td><td>≤ order_amount</td><td><span class="tag pii">Blocker</span></td><td>Finance</td></tr>
-          <tr><td class="mono">DQ-007</td><td class="mono">order.order_status</td><td>in (NEW,PENDING,SHIPPED,DELIVERED,CANCELLED)</td><td><span class="tag pii-quasi">Warn</span></td><td>Dealer Sales COE</td></tr>
+          <tr><td class="mono">DQ-007</td><td class="mono">order.order_status</td><td>in (NEW,PENDING,SHIPPED,DELIVERED,CANCELLED)</td><td><span class="tag pii-quasi">Warn</span></td><td>Customer Operations COE</td></tr>
           <tr><td class="mono">DQ-008</td><td class="mono">product.list_price</td><td>≥ 0 · anomaly z-score &lt; 4</td><td><span class="tag pii-quasi">Warn</span></td><td>Finance</td></tr>
           <tr><td class="mono">DQ-009</td><td class="mono">customer.postal_code</td><td>matches ^\\d{5}(-\\d{4})?$</td><td><span class="tag pii-quasi">Warn</span></td><td>Data Platform</td></tr>
           <tr><td class="mono">DQ-010</td><td class="mono">source.freshness</td><td>≤ 15 min lag</td><td><span class="tag pii-quasi">Warn</span></td><td>Data Platform</td></tr>
@@ -1396,7 +1450,7 @@ function renderDQ(main){
   `);
   wireTabs(main);
 }
-const DBT_TESTS = `# dbt/models/dealer_sales/marts/schema_tests.yml
+const DBT_TESTS = `# dbt/models/ccb/marts/schema_tests.yml
 version: 2
 models:
   - name: fct_order
@@ -1420,8 +1474,8 @@ models:
               to: ref('dim_customer')
               field: customer_key
 `;
-const GE_SUITE = `# dq/ge_suites/dealer_sales.yml
-suite_name: dealer_sales_full
+const GE_SUITE = `# dq/ge_suites/oracle_ccb.yml
+suite_name: oracle_ccb_full
 expectations:
   - expect_column_values_to_be_unique: {column: customer_id}
   - expect_column_values_to_not_be_null: {column: customer_id}
@@ -1435,7 +1489,7 @@ expectations:
       column_B: discount_amount
       or_equal: true
 `;
-const SNOW_ALERTS = `-- infra/snowflake/alerts/dealer_sales.sql
+const SNOW_ALERTS = `-- infra/snowflake/alerts/oracle_ccb.sql
 CREATE OR REPLACE ALERT DP_META.ALERT_DEALER_SALES_FRESHNESS
   WAREHOUSE = WH_MONITOR_XSMALL
   SCHEDULE  = '15 MINUTE'
@@ -1446,7 +1500,7 @@ IF (EXISTS (
 ))
 THEN CALL DP_META.NOTIFY_PAGE(
   channel => 'data-platform-oncall',
-  subject => 'DealerSalesCRM freshness SLA breach'
+  subject => 'Oracle CC&amp;B freshness SLA breach'
 );
 `;
 
@@ -1514,12 +1568,12 @@ function renderPII(main){
         <div><strong>Data steward approval required</strong>
         <div class="text-sm muted">This is a governance-critical checkpoint. Approving publishes tags to the catalog and applies masking policies in Snowflake.</div></div>
       </div>
-      <button class="btn accent storyboard-only" onclick="requestApproval('pii','Approve PII classification &amp; masking policies?','This will apply Snowflake column masking policies and register catalog tags for DealerSalesCRM. Restricted columns will be hashed; confidential columns will be masked in non-prod. This action is reversible via a follow-up steward request.')">Request steward approval</button>
+      <button class="btn accent storyboard-only" onclick="requestApproval('pii','Approve PII classification &amp; masking policies?','This will apply Snowflake column masking policies and register catalog tags for Oracle CC&amp;B. Restricted columns will be hashed; confidential columns will be masked in non-prod. This action is reversible via a follow-up steward request.')">Request steward approval</button>
       <div class="live-only-hint text-sm muted" style="display:none">The approval modal opens automatically when the backend reaches this gate. Use it — the buttons below are only active during a live pipeline pause.</div>
     </div>
   `);
 }
-const MASK_SQL = `-- infra/snowflake/masking/dealer_sales.sql
+const MASK_SQL = `-- infra/snowflake/masking/oracle_ccb.sql
 CREATE MASKING POLICY IF NOT EXISTS gov.mask_restricted_hash AS (val string) RETURNS string ->
   CASE
     WHEN CURRENT_ROLE() IN ('R_PII_STEWARD','R_APP_DEALER_SALES') THEN val
@@ -1533,7 +1587,7 @@ CREATE MASKING POLICY IF NOT EXISTS gov.mask_financial AS (val number) RETURNS n
     ELSE NULL
   END;
 
-ALTER TABLE DP_RAW.RAW_DEALER_SALES.CUSTOMER
+ALTER TABLE DP_RAW.RAW_CCB.CUSTOMER
   MODIFY COLUMN email_address SET MASKING POLICY gov.mask_restricted_hash,
   MODIFY COLUMN first_name    SET MASKING POLICY gov.mask_restricted_hash,
   MODIFY COLUMN last_name     SET MASKING POLICY gov.mask_restricted_hash,
@@ -1541,9 +1595,9 @@ ALTER TABLE DP_RAW.RAW_DEALER_SALES.CUSTOMER
   MODIFY COLUMN street_address SET MASKING POLICY gov.mask_restricted_hash;
 `;
 const CATALOG_JSON = `{
-  "asset": "snowflake://DP_RAW.RAW_DEALER_SALES",
-  "domain": "dealer_sales",
-  "owner": "dealer_sales_coe@enterprise.example.com",
+  "asset": "snowflake://DP_RAW.RAW_CCB",
+  "domain": "customer_billing",
+  "owner": "customer_ops_coe@coned.com",
   "steward": "s.kandasamy@cognizant.com",
   "tags": {
     "governance.pii": ["first_name","last_name","email_address","phone_number","street_address"],
@@ -1552,10 +1606,10 @@ const CATALOG_JSON = `{
     "governance.retention": "P7Y"
   },
   "lineage": {
-    "sources": ["rest_api://dealer-sales-crm"],
-    "downstream": ["dbt://dim_customer","dbt://dim_product","dbt://fct_order","powerbi://Dealer Sales - Certified"]
+    "sources": ["rest_api://oracle-ccb"],
+    "downstream": ["dbt://dim_customer","dbt://dim_product","dbt://fct_order","powerbi://Customer 360 - Certified"]
   },
-  "quality_scorecard_ref": "great_expectations://dealer_sales_full"
+  "quality_scorecard_ref": "great_expectations://oracle_ccb_full"
 }`;
 
 /* ==================================================================
@@ -1621,13 +1675,13 @@ function renderSynth(main){
     <div class="approval">
       <div class="lft"><div class="ico">▶</div>
         <div><strong>Synthetic fixtures published</strong>
-        <div class="text-sm muted">Available at <code>s3://enterprise-dp-fixtures/dealer-sales/v1/</code> and loaded into <code>DP_DEV.RAW_DEALER_SALES</code>.</div></div>
+        <div class="text-sm muted">Available at <code>s3://enterprise-dp-fixtures/oracle-ccb/v1/</code> and loaded into <code>DP_DEV.RAW_CCB</code>.</div></div>
       </div>
       <button class="btn" onclick="markAgentDone('synth');markDone('synth')">Continue to Documentation &amp; Lineage →</button>
     </div>
   `);
 }
-const SYNTH_CFG = `# testing/synth/dealer_sales.yml
+const SYNTH_CFG = `# testing/synth/oracle_ccb.yml
 seed: 42
 volume:
   customer: 5000
@@ -1636,7 +1690,7 @@ volume:
 distributions:
   order.order_amount: {kind: lognormal, mu: 6.1, sigma: 1.3, min: 5, max: 100000}
   order.order_status: {kind: categorical, weights: {NEW:0.06, PENDING:0.14, SHIPPED:0.30, DELIVERED:0.48, CANCELLED:0.02}}
-  customer.state: {source_profile: profile-dealer-sales-v1.json#state.hist}
+  customer.state: {source_profile: profile-oracle-ccb-v1.json#state.hist}
 integrity:
   order.customer_id: { fk_to: customer.customer_id }
   order.product_id:  { fk_to: product.product_id }
@@ -1696,7 +1750,7 @@ function renderLineageSVG(){
       </marker>
       <linearGradient id="g1" x1="0" x2="1"><stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#7c3aed"/></linearGradient>
     </defs>
-    ${node(30,40,'DealerSalesCRM','REST API','#7c3aed')}
+    ${node(30,40,'Oracle CC&amp;B','REST API','#7c3aed')}
     ${node(220,20,'RAW.CUSTOMER','Snowflake','#3b82f6')}
     ${node(220,120,'RAW.ORDER','Snowflake','#3b82f6')}
     ${node(220,220,'RAW.PRODUCT','Snowflake','#3b82f6')}
@@ -1732,17 +1786,17 @@ function node(x,y,title,sub,color,pill){
 function line(x1,y1,x2,y2){
   return `<path d="M${x1},${y1} C${(x1+x2)/2},${y1} ${(x1+x2)/2},${y2} ${x2},${y2}" stroke="#60a5fa" stroke-width="1.4" fill="none" marker-end="url(#ar)" opacity=".8"/>`;
 }
-const README_MD = `# DealerSalesCRM — Enterprise Data Platform
+const README_MD = `# Oracle CC&amp;B — Enterprise Data Platform
 
 Auto-generated by the Cognizant Documentation & Metadata Agent.
 
 ## Overview
-Ingests DealerSalesCRM (REST API) into the enterprise data platform every 30 minutes.
-Data lands in \`DP_RAW.RAW_DEALER_SALES\`, is transformed by dbt into staging and
+Ingests Oracle CC&amp;B (REST API) into the enterprise data platform every 30 minutes.
+Data lands in \`DP_RAW.RAW_CCB\`, is transformed by dbt into staging and
 mart layers, and is exposed to Power BI as a certified dataset.
 
 ## Ownership
-- Business owner: **Dealer Sales COE**
+- Business owner: **Customer Operations COE**
 - Technical owner: **Data Platform team**
 - Steward: shanmugapriya.kandasamy@cognizant.com
 
@@ -1752,25 +1806,25 @@ mart layers, and is exposed to Power BI as a certified dataset.
 - DQ blocker rules must be green for the run to be published
 
 ## Downstream consumers
-- Power BI · *Dealer Sales — Certified*
+- Power BI · *Customer 360 — Certified*
 - Reverse-ETL job \`crm_scoring_v2\` (Hightouch)
 
 ## Runbook
 1. On freshness alert, inspect \`DP_META.SOURCE_FRESHNESS\`.
-2. On DQ failure, review \`DP_META.DQ_RESULTS\`, filter \`domain='dealer_sales'\`.
-3. Escalation: \`#dealer-sales-oncall\`, then dealer_sales_coe@enterprise.example.com.
+2. On DQ failure, review \`DP_META.DQ_RESULTS\`, filter \`domain='ccb'\`.
+3. Escalation: \`#customer-ops-oncall\`, then customer_ops_coe@coned.com.
 `;
-const EXPOSURE_YML = `# dbt/models/dealer_sales/exposures.yml
+const EXPOSURE_YML = `# dbt/models/ccb/exposures.yml
 version: 2
 exposures:
-  - name: powerbi_dealer_sales_certified
-    label: "Dealer Sales — Certified"
+  - name: powerbi_customer_360_certified
+    label: "Customer 360 — Certified"
     type: dashboard
     maturity: high
     url: https://app.powerbi.com/groups/...
     owner:
-      name: Dealer Sales COE
-      email: dealer_sales_coe@enterprise.example.com
+      name: Customer Operations COE
+      email: customer_ops_coe@coned.com
     depends_on:
       - ref('dim_customer')
       - ref('dim_product')
@@ -1787,7 +1841,7 @@ function renderReview(main){
   main.insertAdjacentHTML('beforeend',`
     <div class="pr-header">
       <div>
-        <strong>PR #4821</strong> · <code>feat(dealer-sales): onboard DealerSalesCRM data product</code>
+        <strong>PR #4821</strong> · <code>feat(ccb): onboard Oracle CC&amp;B customer &amp; billing data product</code>
         <div class="text-sm muted mt-4">Opened by <code>agent-coding-review</code> · 34 files changed · +2,148 −0</div>
       </div>
       <div class="row">
@@ -1813,7 +1867,7 @@ function renderReview(main){
         <div>
           <h4 style="margin:0 0 8px">Reviewer checklist</h4>
           ${checkList([
-            ['ok','Business owner sign-off recorded (Dealer Sales COE)'],
+            ['ok','Business owner sign-off recorded (Customer Operations COE)'],
             ['ok','Steward approved PII classification'],
             ['ok','Ops on-call is aware of freshness alert'],
             ['ok','Power BI dataset ownership confirmed'],
@@ -1839,26 +1893,26 @@ function renderReview(main){
 }
 function filesList(){
   const files = [
-    ['infra/fivetran/dealer-sales-crm.yaml','+52'],
+    ['infra/fivetran/oracle-ccb.yaml','+52'],
     ['infra/fivetran/custom_connector/connector.py','+38'],
-    ['infra/snowflake/landing/dealer_sales_crm.sql','+18'],
-    ['infra/snowflake/masking/dealer_sales.sql','+29'],
-    ['infra/snowflake/alerts/dealer_sales.sql','+14'],
-    ['dbt/models/dealer_sales/sources.yml','+41'],
-    ['dbt/models/dealer_sales/staging/stg_dealer_sales__customer.sql','+34'],
-    ['dbt/models/dealer_sales/staging/stg_dealer_sales__order.sql','+29'],
-    ['dbt/models/dealer_sales/staging/stg_dealer_sales__product.sql','+27'],
-    ['dbt/models/dealer_sales/marts/dim_customer.sql','+22'],
-    ['dbt/models/dealer_sales/marts/dim_product.sql','+21'],
-    ['dbt/models/dealer_sales/marts/fct_order.sql','+31'],
-    ['dbt/models/dealer_sales/schema.yml','+118'],
-    ['dbt/models/dealer_sales/marts/schema_tests.yml','+64'],
+    ['infra/snowflake/landing/oracle_ccb.sql','+18'],
+    ['infra/snowflake/masking/oracle_ccb.sql','+29'],
+    ['infra/snowflake/alerts/oracle_ccb.sql','+14'],
+    ['dbt/models/ccb/sources.yml','+41'],
+    ['dbt/models/ccb/staging/stg_ccb__customer.sql','+34'],
+    ['dbt/models/ccb/staging/stg_ccb__order.sql','+29'],
+    ['dbt/models/ccb/staging/stg_ccb__product.sql','+27'],
+    ['dbt/models/ccb/marts/dim_customer.sql','+22'],
+    ['dbt/models/ccb/marts/dim_product.sql','+21'],
+    ['dbt/models/ccb/marts/fct_order.sql','+31'],
+    ['dbt/models/ccb/schema.yml','+118'],
+    ['dbt/models/ccb/marts/schema_tests.yml','+64'],
     ['dbt/macros/hash_pii.sql','+11'],
-    ['dq/ge_suites/dealer_sales.yml','+42'],
-    ['testing/synth/dealer_sales.yml','+31'],
-    ['docs/dealer_sales/README.md','+62'],
-    ['docs/dealer_sales/lineage.png','+bin'],
-    ['pipelines/azdo-dealer-sales.yml','+87'],
+    ['dq/ge_suites/oracle_ccb.yml','+42'],
+    ['testing/synth/oracle_ccb.yml','+31'],
+    ['docs/ccb/README.md','+62'],
+    ['docs/ccb/lineage.png','+bin'],
+    ['pipelines/azdo-oracle-ccb.yml','+87'],
   ];
   return `<div style="border:1px solid var(--line);border-radius:10px;overflow:hidden">
     <table class="tbl" style="margin:0">
@@ -1876,7 +1930,7 @@ function renderDeploy(main){
   markAgentRunning('deploy');
   main.insertAdjacentHTML('beforeend',`
     <div class="card">
-      <h3>Azure DevOps pipeline · <code>dealer-sales-crm-cd</code></h3>
+      <h3>Azure DevOps pipeline · <code>oracle-ccb-cd</code></h3>
       <div class="card-sub">Auto-generated. The prod stage is gated on a change-advisory approval.</div>
       <div class="pipe">
         ${pipeStage('Build','npm ci · dbt deps','done')}
@@ -1903,9 +1957,9 @@ function renderDeploy(main){
     <div class="approval storyboard-only">
       <div class="lft"><div class="ico">✋</div>
         <div><strong>Change-advisory approval required</strong>
-        <div class="text-sm muted">Promotes DealerSalesCRM to production. On approval, Fivetran connector will be enabled and Power BI dataset will be certified.</div></div>
+        <div class="text-sm muted">Promotes Oracle CC&amp;B to production. On approval, Fivetran connector will be enabled and Power BI dataset will be certified.</div></div>
       </div>
-      <button class="btn accent storyboard-only" onclick="requestApproval('deploy','Approve production deployment?','Enables Fivetran connector, promotes dbt models to DP_PROD, certifies the Power BI dataset, and hands the data product to the Dealer Sales COE.')">Request CAB approval</button>
+      <button class="btn accent storyboard-only" onclick="requestApproval('deploy','Approve production deployment?','Enables Fivetran connector, promotes dbt models to DP_PROD, certifies the Power BI dataset, and hands the data product to the Customer Operations COE.')">Request CAB approval</button>
       <div class="live-only-hint text-sm muted" style="display:none">The approval modal opens automatically when the deployment reaches the CAB gate.</div>
     </div>
   `);
@@ -1929,13 +1983,13 @@ function pipeStage(t,s,st){
     <div class="stg-status">${st}</div>
   </div>`;
 }
-const AZDO_YAML = `# pipelines/azdo-dealer-sales.yml
+const AZDO_YAML = `# pipelines/azdo-oracle-ccb.yml
 trigger:
   branches: {include: [main]}
-  paths:    {include: [dbt/models/dealer_sales/*, infra/fivetran/dealer-sales-crm.yaml]}
+  paths:    {include: [dbt/models/ccb/*, infra/fivetran/oracle-ccb.yaml]}
 
 variables:
-  domain: dealer_sales
+  domain: customer_billing
 
 stages:
   - stage: Build
@@ -1946,19 +2000,19 @@ stages:
     jobs:
       - job: dq
         steps:
-          - script: dbt test --select dealer_sales --target dev
-          - script: great_expectations checkpoint run dealer_sales_full
+          - script: dbt test --select ccb --target dev
+          - script: great_expectations checkpoint run oracle_ccb_full
 
   - stage: DeployDev
     dependsOn: DQ
-    jobs: [{ job: deploy, steps: [{script: dbt run --target dev --select dealer_sales}] }]
+    jobs: [{ job: deploy, steps: [{script: dbt run --target dev --select ccb}] }]
 
   - stage: PromoteQA
     dependsOn: DeployDev
     jobs:
       - deployment: promoteQA
         environment: dp-qa   # requires manual approver group
-        strategy: {runOnce: {deploy: {steps: [{script: dbt run --target qa --select dealer_sales}]}}}
+        strategy: {runOnce: {deploy: {steps: [{script: dbt run --target qa --select ccb}]}}}
 
   - stage: PromotePROD
     dependsOn: PromoteQA
@@ -1966,9 +2020,9 @@ stages:
       - deployment: promotePROD
         environment: dp-prod  # requires CAB approval
         strategy: {runOnce: {deploy: {steps: [
-          {script: dbt run --target prod --select dealer_sales},
-          {script: fivetran-cli connector enable dealer_sales_crm},
-          {script: powerbi-cli dataset certify --name "Dealer Sales - Certified"}
+          {script: dbt run --target prod --select ccb},
+          {script: fivetran-cli connector enable oracle_ccb},
+          {script: powerbi-cli dataset certify --name "Customer 360 - Certified"}
         ]}}}
 `;
 
@@ -1989,18 +2043,18 @@ function renderDemocratize(main){
 
     <div class="grid-2">
       <div class="card">
-        <h3>Atlan asset · Dealer Sales — Certified</h3>
+        <h3>Atlan asset · Customer 360 — Certified</h3>
         <div class="card-sub">Published to the Enterprise Data Catalog. Discoverable by any business user with a Cognizant SSO login.</div>
         <table class="tbl">
           <tr><td>Certification</td><td><span class="tag public">Certified</span></td></tr>
-          <tr><td>Owner</td><td>Dealer Sales COE</td></tr>
+          <tr><td>Owner</td><td>Customer Operations COE</td></tr>
           <tr><td>Steward</td><td class="mono text-xs">shanmugapriya.kandasamy@cognizant.com</td></tr>
           <tr><td>Refresh</td><td>Every 30 min · alert &gt; 15 min lag</td></tr>
           <tr><td>Quality score</td><td><strong>98 / 100</strong></td></tr>
           <tr><td>Tables</td><td class="mono">dim_customer · dim_product · fct_order</td></tr>
           <tr><td>Certifications on</td><td class="mono">Snowflake · Power BI · Hightouch</td></tr>
           <tr><td>Tags</td><td>
-            <span class="badge">dealer-sales</span>
+            <span class="badge">ccb</span>
             <span class="badge">revenue</span>
             <span class="badge public">certified</span>
             <span class="badge">PII-safe</span>
@@ -2031,10 +2085,10 @@ function renderDemocratize(main){
       <table class="tbl">
         <thead><tr><th>Access pack</th><th>Grants</th><th>Audience</th><th>Approval</th></tr></thead>
         <tbody>
-          <tr><td class="mono">dealer_sales_read</td><td>SELECT on DP_PROD.DEALER_SALES.*</td><td>Dealer Sales analysts</td><td><span class="tag public">Auto</span></td></tr>
-          <tr><td class="mono">dealer_sales_bi</td><td>Power BI dataset access, no direct SQL</td><td>Business users</td><td><span class="tag public">Auto</span></td></tr>
-          <tr><td class="mono">dealer_sales_finance</td><td>SELECT + financial columns unmasked</td><td>Finance team</td><td><span class="tag pii-quasi">Steward</span></td></tr>
-          <tr><td class="mono">dealer_sales_pii</td><td>SELECT + PII columns unmasked</td><td>Steward-approved only</td><td><span class="tag pii">Steward</span></td></tr>
+          <tr><td class="mono">customer_360_read</td><td>SELECT on DP_PROD.CCB.*</td><td>Customer Ops analysts</td><td><span class="tag public">Auto</span></td></tr>
+          <tr><td class="mono">customer_360_bi</td><td>Power BI dataset access, no direct SQL</td><td>Business users</td><td><span class="tag public">Auto</span></td></tr>
+          <tr><td class="mono">customer_360_finance</td><td>SELECT + financial columns unmasked</td><td>Finance team</td><td><span class="tag pii-quasi">Steward</span></td></tr>
+          <tr><td class="mono">customer_360_pii</td><td>SELECT + PII columns unmasked</td><td>Steward-approved only</td><td><span class="tag pii">Steward</span></td></tr>
         </tbody>
       </table>
     </div>
@@ -2086,7 +2140,7 @@ function queryExamplePane(question, sql, why){
   </div>`;
 }
 
-const SEMANTIC_YML = `# semantic/metrics/dealer_sales.yml
+const SEMANTIC_YML = `# semantic/metrics/customer_360.yml
 version: 2
 metrics:
   - name: total_net_revenue
@@ -2114,14 +2168,14 @@ metrics:
     expression: dealer_key
 `;
 
-const QUICKSTART_MD = `# Dealer Sales — Quickstart
+const QUICKSTART_MD = `# Customer 360 — Quickstart
 
-This data product contains the certified Dealer Sales dataset — customers,
+This data product contains the certified Customer 360 dataset for Con Edison — customers,
 products, and orders — refreshed every 30 minutes from the source CRM. It's
 governed, PII-masked, and safe for broad analyst use.
 
 ## Requesting access
-Access is self-serve via ServiceNow. Search for **dealer_sales_read** and
+Access is self-serve via ServiceNow. Search for **customer_360_read** and
 click Request. You'll receive Snowflake and Power BI grants automatically.
 
 ## Key metrics
@@ -2138,9 +2192,9 @@ click Request. You'll receive Snowflake and Power BI grants automatically.
 - How does AOV differ by customer segment?
 
 ## Contact
-- Business owner: Dealer Sales COE
+- Business owner: Customer Operations COE
 - Steward: shanmugapriya.kandasamy@cognizant.com
-- On-call: #dealer-sales-oncall Slack channel
+- On-call: #customer-ops-oncall Slack channel
 `;
 
 /* ==================================================================
@@ -2148,7 +2202,7 @@ click Request. You'll receive Snowflake and Power BI grants automatically.
    ================================================================== */
 function renderProduct(main){
   document.getElementById('heroSub').textContent =
-    'The DealerSalesCRM data product is live in production, governed, tested, documented, and available to Power BI and downstream consumers.';
+    'The Oracle CC&amp;B data product is live in production, governed, tested, documented, and available to Power BI and downstream consumers.';
   main.insertAdjacentHTML('beforeend',`
     <div class="grid-4">
       ${kpi('Time from request to prod','7 min 41 s','vs. 4–6 weeks baseline')}
@@ -2161,10 +2215,10 @@ function renderProduct(main){
       <h3>Data product summary</h3>
       <div class="grid-2">
         <div>
-          <h4 style="margin:0 0 6px">DealerSalesCRM</h4>
+          <h4 style="margin:0 0 6px">Oracle CC&amp;B</h4>
           <table class="tbl">
-            <tr><td>Domain</td><td>Dealer Sales</td></tr>
-            <tr><td>Owner</td><td>Dealer Sales COE</td></tr>
+            <tr><td>Domain</td><td>Customer Billing</td></tr>
+            <tr><td>Owner</td><td>Customer Operations COE</td></tr>
             <tr><td>Steward</td><td>S. Kandasamy</td></tr>
             <tr><td>Refresh</td><td>Every 30 min</td></tr>
             <tr><td>SLA</td><td>&lt; 15 min lag</td></tr>
@@ -2176,10 +2230,10 @@ function renderProduct(main){
           <h4 style="margin:0 0 6px">Consumption endpoints</h4>
           <table class="tbl">
             <tr><td>Snowflake</td><td class="mono">DP_PROD.DEALER_SALES.*</td></tr>
-            <tr><td>Power BI</td><td class="mono">Dealer Sales — Certified</td></tr>
+            <tr><td>Power BI</td><td class="mono">Customer 360 — Certified</td></tr>
             <tr><td>Semantic layer</td><td class="mono">metric://dealer.orders_ttm</td></tr>
             <tr><td>Reverse ETL</td><td class="mono">hightouch://crm_scoring_v2</td></tr>
-            <tr><td>Catalog</td><td class="mono">catalog://dealer_sales/dealer-sales-crm</td></tr>
+            <tr><td>Catalog</td><td class="mono">catalog://customer_billing/oracle-ccb</td></tr>
           </table>
         </div>
       </div>
@@ -2235,7 +2289,7 @@ function renderProduct(main){
 
     <div class="approval" style="background:linear-gradient(160deg,rgba(34,197,94,.16),rgba(34,197,94,.06));border-color:rgba(34,197,94,.5)">
       <div class="lft"><div class="ico" style="background:rgba(34,197,94,.18);color:#4ade80">✓</div>
-        <div><strong>DealerSalesCRM is a certified data product</strong>
+        <div><strong>Oracle CC&amp;B is a certified data product</strong>
         <div class="text-sm muted">The Autonomous Data Engineering Factory has delivered a governed, tested, documented data product in under 8 minutes of agent execution time.</div></div>
       </div>
       <button class="btn ghost" onclick="navigate('intake')">↺ Restart demo</button>

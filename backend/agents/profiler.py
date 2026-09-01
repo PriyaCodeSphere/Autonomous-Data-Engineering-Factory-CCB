@@ -1,8 +1,9 @@
 """Data Profiling & Validation Agent — pandas, no LLM.
 
-Reads the actual DealerSalesCRM data via the mock source's paginated API,
-computes column statistics, detects anomalies, and publishes the profile
-JSON that downstream agents (DQ, PII, Synth) consume.
+Reads the Oracle CC&B source through the mock's paginated API, computes
+per-column statistics, flags anomalies (e.g. overpayments where PAY_AMT
+exceeds the billed TOTAL_AMOUNT), and publishes the profile JSON that
+downstream agents (DQ, PII, Synth) consume.
 """
 from __future__ import annotations
 
@@ -44,21 +45,24 @@ class ProfilerAgent(Agent):
 
     async def run(self, ctx: RunContext) -> dict:
         self.started(ctx)
-        entities = [e["name"] for e in ctx.outputs.get("plan", {}).get("entities", [])] or ["customer", "order", "product"]
-        # Prefer the pipeline's actual discovered entities
-        entities = ctx.outputs.get("pipeline", {}).get("entities", entities)
+
+        # Prefer the pipeline's actual discovered entities; else fall back to the plan.
+        entities = ctx.outputs.get("pipeline", {}).get("entities") \
+            or [e["name"] for e in ctx.outputs.get("plan", {}).get("entities", [])] \
+            or ["person", "account", "bill"]
 
         profile: dict[str, Any] = {"entities": {}}
+        cached: dict[str, pd.DataFrame] = {}
 
         for entity in entities:
             self.emit(ctx, f"Sampling {entity} via /v1/{entity}s …")
             df = await _fetch_all(ctx.source_url, ctx.source_token, entity)
+            cached[entity] = df
             self.emit(ctx, f"loaded {len(df):,} rows · {len(df.columns)} columns", level="ok")
 
             cols: dict[str, Any] = {}
             for col in df.columns:
                 s = df[col]
-                # pandas 3 + numpy 2 don't allow boolean subtract inside .mean(); use sum() / len().
                 null_pct = round((int(s.isna().sum()) / max(len(s), 1)) * 100, 3)
                 distinct_pct = round(int(s.nunique(dropna=True)) / max(len(s), 1) * 100, 3)
                 col_info: dict[str, Any] = {
@@ -68,7 +72,6 @@ class ProfilerAgent(Agent):
                     "distinct_pct": distinct_pct,
                 }
                 ss = s.dropna()
-                # Only compute numeric stats for true numeric (int/float), not booleans.
                 is_num = pd.api.types.is_numeric_dtype(ss) and not pd.api.types.is_bool_dtype(ss)
                 if is_num and len(ss):
                     ss_f = ss.astype(float)
@@ -88,27 +91,56 @@ class ProfilerAgent(Agent):
                 "columns": cols,
             }
 
-        # Cross-column anomaly: discount > amount
+        # Cross-entity anomaly: PAY_AMT > TOTAL_AMOUNT (overpayment) joined on BILL_ID
+        anomalies: dict[str, int] = {}
         try:
-            orders_df = await _fetch_all(ctx.source_url, ctx.source_token, "order")
-            anomaly = int((orders_df["discount_amount"] > orders_df["order_amount"]).sum())
-            profile["anomalies"] = {"discount_exceeds_amount": anomaly}
-            if anomaly:
-                self.emit(ctx, f"anomaly · discount_amount > order_amount in {anomaly} rows", level="warn")
+            if "bill" in cached and "payment" in cached:
+                bill_df = cached["bill"]
+                pay_df = cached["payment"]
+                if "BILL_ID" in pay_df.columns and "TOTAL_AMOUNT" in bill_df.columns:
+                    merged = pay_df.merge(
+                        bill_df[["BILL_ID", "TOTAL_AMOUNT"]], on="BILL_ID", how="left",
+                    )
+                    overpaid = int((merged["PAY_AMT"] > merged["TOTAL_AMOUNT"]).sum())
+                    anomalies["overpayment_amount_over_bill"] = overpaid
+                    if overpaid:
+                        self.emit(ctx, f"anomaly · PAY_AMT > TOTAL_AMOUNT in {overpaid} rows", level="warn")
         except Exception:  # noqa: BLE001
             pass
 
-        # Histogram of order_amount for the UI
+        # Single-entity anomaly: bills flagged for late-pay charge (LATE_PAY_CHARGE_SW='Y')
         try:
-            bins = [0, 100, 500, 1000, 5000, 10000, 50000, 10**9]
-            labels = ["$0–$100", "$100–$500", "$500–$1K", "$1K–$5K", "$5K–$10K", "$10K–$50K", "$50K+"]
-            cats = pd.cut(orders_df["order_amount"], bins=bins, labels=labels, right=False)
-            hist = cats.value_counts().reindex(labels, fill_value=0)
-            profile["order_amount_hist"] = {
-                "labels": labels,
-                "counts": [int(v) for v in hist.values],
-                "pct":    [round(int(v) / max(len(orders_df), 1) * 100, 2) for v in hist.values],
-            }
+            if "bill" in cached and "LATE_PAY_CHARGE_SW" in cached["bill"].columns:
+                late = int((cached["bill"]["LATE_PAY_CHARGE_SW"] == "Y").sum())
+                anomalies["bills_flagged_late"] = late
+                if late:
+                    self.emit(ctx, f"anomaly · bills flagged LATE_PAY_CHARGE_SW=Y in {late} rows", level="warn")
+        except Exception:  # noqa: BLE001
+            pass
+
+        # Bills in review status (BILL_STAT_FLG='60')
+        try:
+            if "bill" in cached and "BILL_STAT_FLG" in cached["bill"].columns:
+                in_review = int((cached["bill"]["BILL_STAT_FLG"] == "60").sum())
+                anomalies["bills_in_review_high_amount"] = in_review
+        except Exception:  # noqa: BLE001
+            pass
+
+        profile["anomalies"] = anomalies
+
+        # Histogram of bill TOTAL_AMOUNT for the UI
+        try:
+            if "bill" in cached and "TOTAL_AMOUNT" in cached["bill"].columns:
+                bill_df = cached["bill"]
+                bins = [0, 100, 250, 500, 1000, 2500, 10000, 10**9]
+                labels = ["$0–$100", "$100–$250", "$250–$500", "$500–$1K", "$1K–$2.5K", "$2.5K–$10K", "$10K+"]
+                cats = pd.cut(bill_df["TOTAL_AMOUNT"], bins=bins, labels=labels, right=False)
+                hist = cats.value_counts().reindex(labels, fill_value=0)
+                profile["bill_amount_hist"] = {
+                    "labels": labels,
+                    "counts": [int(v) for v in hist.values],
+                    "pct":    [round(int(v) / max(len(bill_df), 1) * 100, 2) for v in hist.values],
+                }
         except Exception:  # noqa: BLE001
             pass
 

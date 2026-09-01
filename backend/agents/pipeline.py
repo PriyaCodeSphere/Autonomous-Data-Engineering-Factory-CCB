@@ -39,30 +39,30 @@ class PipelineConfigAgent(Agent):
             )
 
         fivetran_yaml = (
-            "# infra/fivetran/dealer-sales-crm.yaml\n"
+            "# infra/fivetran/oracle-ccb.yaml\n"
             "version: 3\n"
-            "schema: RAW_DEALER_SALES\n"
+            "schema: RAW_CCB\n"
             "destination:\n"
             "  type: snowflake\n"
-            "  account: enterprise-prod.us-east-2.aws\n"
+            "  account: coned-prod.us-east-1.aws\n"
             "  warehouse: WH_INGEST_XSMALL\n"
             "  database: DP_RAW\n"
             "  role: R_FIVETRAN_LOADER\n"
             "source:\n"
-            "  name: dealer_sales_crm\n"
+            "  name: oracle_ccb\n"
             "  type: rest_api_custom\n"
             "  paginator: cursor\n"
             "  auth:\n"
             "    type: oauth2_client_credentials\n"
-            "    secret_ref: arn:aws:secretsmanager:us-east-2:...:dealer-sales/oauth\n"
+            "    secret_ref: arn:aws:secretsmanager:us-east-1:...:oracle-ccb/oauth\n"
             "  streams:\n"
             f"{streams_yaml}"
             "schedule:\n"
             "  frequency: 30m\n"
             "  alert_if_lag_over: 15m\n"
             "tags:\n"
-            "  domain: dealer_sales\n"
-            "  owner: dealer_sales_coe@enterprise.example.com\n"
+            "  domain: customer_billing\n"
+            "  owner: customer_ops_coe@coned.com\n"
             "  data_class: mixed_pii_public\n"
         )
         p_yaml = ctx.write_text(("pipeline", "fivetran.yaml"), fivetran_yaml)
@@ -70,12 +70,12 @@ class PipelineConfigAgent(Agent):
 
         # --- Landing schema DDL ---
         ddl = (
-            "-- infra/snowflake/landing/dealer_sales_crm.sql\n"
-            "CREATE SCHEMA IF NOT EXISTS DP_RAW.RAW_DEALER_SALES\n"
-            "  WITH MANAGED ACCESS COMMENT = 'Landing schema for DealerSalesCRM';\n\n"
-            "GRANT USAGE ON SCHEMA DP_RAW.RAW_DEALER_SALES TO ROLE R_DBT_TRANSFORMER;\n"
-            "GRANT USAGE ON SCHEMA DP_RAW.RAW_DEALER_SALES TO ROLE R_DATA_STEWARD;\n\n"
-            "ALTER SCHEMA DP_RAW.RAW_DEALER_SALES\n"
+            "-- infra/snowflake/landing/oracle_ccb.sql\n"
+            "CREATE SCHEMA IF NOT EXISTS DP_RAW.RAW_CCB\n"
+            "  WITH MANAGED ACCESS COMMENT = 'Landing schema for Oracle CC&B';\n\n"
+            "GRANT USAGE ON SCHEMA DP_RAW.RAW_CCB TO ROLE R_DBT_TRANSFORMER;\n"
+            "GRANT USAGE ON SCHEMA DP_RAW.RAW_CCB TO ROLE R_DATA_STEWARD;\n\n"
+            "ALTER SCHEMA DP_RAW.RAW_CCB\n"
             "  SET TAG governance.retention = '7Y',\n"
             "          governance.pii_masked_nonprod = 'true';\n"
         )
@@ -84,11 +84,14 @@ class PipelineConfigAgent(Agent):
 
         # --- Custom connector.py ---
         py = (
-            '"""DealerSalesCRM REST paginator. Cognizant Virtual Data Engineer pattern."""\n'
+            '"""Oracle CC&B REST paginator. Cognizant Virtual Data Engineer pattern."""\n'
             "from fivetran_sdk import Connector, Schema, Sync, Cursor\n\n"
             f"STREAMS = {[e['name'] for e in entities]}\n\n"
+            "PRIMARY_KEYS = {\n"
+            + "".join(f"    '{e['name']}': {e['primary_key']!r},\n" for e in entities)
+            + "}\n\n"
             "def schema():\n"
-            '    return [Schema.stream(s, primary_key=[f"{s}_id"]) for s in STREAMS]\n\n'
+            "    return [Schema.stream(s, primary_key=PRIMARY_KEYS[s]) for s in STREAMS]\n\n"
             "def update(config, state):\n"
             "    for stream in STREAMS:\n"
             '        cursor = state.get(stream, "1970-01-01T00:00:00Z")\n'
@@ -104,11 +107,12 @@ class PipelineConfigAgent(Agent):
         p_py = ctx.write_text(("pipeline", "connector.py"), py)
         self.artifact(ctx, "connector.py", p_py, preview=py)
 
-        # --- Test the actual source pagination ---
-        self.emit(ctx, "Verifying pagination with a live call to /v1/customers …")
+        # --- Verify the source is actually reachable ---
+        probe_entity = entities[0]["name"]
+        self.emit(ctx, f"Verifying pagination with a live call to /v1/{probe_entity}s …")
         async with httpx.AsyncClient(timeout=10) as client:
             r = await client.get(
-                f"{ctx.source_url}/v1/customers",
+                f"{ctx.source_url}/v1/{probe_entity}s",
                 headers=headers,
                 params={"offset": 0},
             )

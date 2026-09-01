@@ -5,7 +5,7 @@
 #   .\start.ps1 -SkipData    # skip regenerating fake data
 #
 # Two processes will launch:
-#   - Mock DealerSalesCRM source on http://localhost:8001
+#   - Mock Oracle CC&B source on http://localhost:8001
 #   - Agent backend + demo UI on http://localhost:8000
 #
 # Opens the demo in your default browser once the backend is ready.
@@ -36,8 +36,8 @@ if (-not $SkipInstall) {
 # --- 2. Generate mock data ---
 if (-not $SkipData) {
   $dataDir = Join-Path $root "data"
-  if (-not (Test-Path (Join-Path $dataDir "orders.json"))) {
-    Write-Host "[data] generating DealerSalesCRM fake data (seed=42) ..." -ForegroundColor Cyan
+  if (-not (Test-Path (Join-Path $dataDir "bill.json"))) {
+    Write-Host "[data] generating Oracle CC&B synthetic data (seed=42) ..." -ForegroundColor Cyan
     & $venvPy (Join-Path $root "mock_source\generate_data.py")
   } else {
     Write-Host "[data] using existing generated data (pass -SkipData:$false to regenerate)" -ForegroundColor DarkGray
@@ -45,7 +45,7 @@ if (-not $SkipData) {
 }
 
 # --- 3. Launch mock source + backend as background jobs ---
-Write-Host "[run] starting mock DealerSalesCRM on :8001 ..." -ForegroundColor Green
+Write-Host "[run] starting mock Oracle CC&B on :8001 ..." -ForegroundColor Green
 $mock = Start-Process -PassThru -NoNewWindow -FilePath $venvPy `
   -ArgumentList "-m","uvicorn","mock_source.main:app","--port","8001","--host","127.0.0.1" `
   -WorkingDirectory $root `

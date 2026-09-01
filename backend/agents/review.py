@@ -26,13 +26,11 @@ class ReviewAgent(Agent):
         files = list(sorted(str(p.relative_to(ctx.artifacts_dir)) for p in ctx.artifacts_dir.rglob("*") if p.is_file()))
         self.emit(ctx, f"Enumerated {len(files)} artifact files for PR")
 
-        # Deterministic policy checks
         checks = _policy_checks(ctx)
         for c in checks:
             self.emit(ctx, f"[{c['status'].upper()}] {c['name']}",
                       level="ok" if c["status"] == "pass" else "warn")
 
-        # LLM PR summary
         self.emit(ctx, "Drafting PR summary with LLM…")
         upstream_summary = _upstream_summary(ctx)
         pr_md = llm.complete(SYSTEM_PROMPT, upstream_summary + "\n\nFILES:\n" + "\n".join(files[:60]),
@@ -52,7 +50,6 @@ class ReviewAgent(Agent):
         p2 = ctx.write_json(("review", "summary.json"), summary)
         self.artifact(ctx, "summary.json", p2, preview="")
 
-        # Reviewer approval gate
         decision = await self.wait_for_approval(
             ctx, "review",
             title="Human reviewer approval required",
@@ -91,21 +88,21 @@ def _upstream_summary(ctx: RunContext) -> str:
         f"- dq:      {o.get('dq',{}).get('blocker_count',0)} blocker rules, "
         f"{len(o.get('dq',{}).get('rules',[]))} total rules\n"
         f"- pii:     " + ", ".join(f"{k}={v}" for k, v in o.get("pii", {}).get("by_class", {}).items()) + "\n"
-        f"- synth:   {o.get('synth',{}).get('order_rows',0):,} synth orders generated\n"
+        f"- synth:   {o.get('synth',{}).get('bill_rows',0):,} synthetic bills generated\n"
     )
 
 
 def _fallback_pr_md(files: list[str], checks: list[dict]) -> str:
-    lines = ["# feat(dealer-sales): onboard DealerSalesCRM data product",
+    lines = ["# feat(ccb): onboard Oracle CC&B customer & billing data product",
              "",
              "Auto-authored by the Coding & Code Review Agent.",
              "",
              "## Changes",
-             "- Fivetran custom REST connector + landing schema",
-             "- dbt sources, 3 staging models, 3 mart models",
-             "- 42 DQ tests (blockers + warns)",
-             "- PII classification and Snowflake masking policies",
-             "- Synthetic fixtures for DEV/QA",
+             "- Fivetran custom REST connector + landing schema (RAW_CCB)",
+             "- dbt sources, 8 staging models, 4 mart models (dim_customer_360, dim_meter, fct_bill, fct_payment)",
+             "- DQ tests (blockers + warns) for PKs, FK integrity, and overpayment detection",
+             "- PII classification and Snowflake masking policies for CI_PER address/email",
+             "- Synthetic person/account/bill/payment fixtures for DEV/QA",
              "- README, exposures.yml, lineage graph",
              "",
              "## Governance",]
@@ -113,8 +110,8 @@ def _fallback_pr_md(files: list[str], checks: list[dict]) -> str:
         lines.append(f"- [{c['status'].upper()}] {c['name']}")
     lines += ["",
               "## Rollback",
-              "Revert this PR and drop DP_PROD.DEALER_SALES.*. No downstream consumers "
-              "have been notified yet; the Power BI dataset stays uncertified until the "
+              "Revert this PR and drop DP_PROD.CCB.*. No downstream consumers have "
+              "been notified yet; the Power BI dataset stays uncertified until the "
               "deployment pipeline promotes it.",
               "",
               f"### Files ({len(files)})",

@@ -2,7 +2,7 @@
 
 Single-service architecture:
 - Serves the HTML at /
-- Mounts the mock DealerSalesCRM endpoints under /v1/* (was formerly on port 8001)
+- Mounts the mock Oracle CC&B endpoints under /v1/* (was formerly on port 8001)
 - Exposes /api/onboard, SSE stream, and approval endpoints
 - Optional session-cookie password gate (env: APP_PASSWORD)
 
@@ -40,7 +40,7 @@ _SESSION_TOKEN = secrets.token_urlsafe(24)  # rotates on every server restart
 
 app = FastAPI(title="Autonomous Data Engineering Factory")
 
-# Mount the mock DealerSalesCRM source directly on this app. In hosted mode
+# Mount the mock Oracle CC&B source directly on this app. In hosted mode
 # the pipeline agents call the mock via localhost on the same port.
 app.include_router(mock_router)
 
@@ -70,7 +70,7 @@ async def _auth_gate(request: Request, call_next):
     path = request.url.path
     if path in _PUBLIC_PATHS or path.startswith("/static"):
         return await call_next(request)
-    # The mock DealerSalesCRM endpoints (/v1/*) enforce their own bearer-token
+    # The mock Oracle CC&B endpoints (/v1/*) enforce their own bearer-token
     # auth. Skip the session gate for loopback callers so the in-process agents
     # can reach them; external callers still get blocked.
     if path.startswith("/v1/"):
