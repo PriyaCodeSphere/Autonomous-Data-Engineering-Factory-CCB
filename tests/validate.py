@@ -85,8 +85,9 @@ def validate_html() -> None:
         cc = r.headers.get("cache-control", "")
     check("no-cache header on /", "no-store" in cc.lower(), f"cache-control={cc!r}")
 
-    # Verify no Andersen refs
+    # Verify no legacy source refs
     check("no 'Andersen' in served HTML", "Andersen" not in html and "andersen" not in html)
+    check("no 'DealerSalesCRM' in served HTML", "DealerSalesCRM" not in html and "dealer_sales" not in html and "Dealer Sales" not in html)
 
 
 # ---- 2. Backend pipeline flows ---------------------------------------------

@@ -378,7 +378,7 @@ hr.sep{border:none;border-top:1px solid var(--line-soft);margin:14px 0}
       <button class="btn ghost sm" onclick="closeDriftModal()">✕ Close</button>
     </div>
     <div class="grid-4 mt-12" id="driftKpis">
-      ${kpiInline('Column','customer.phone_number')}
+      ${kpiInline('Column','person.POSTAL')}
       ${kpiInline('Change','STRING → NUMBER')}
       ${kpiInline('Severity','—')}
       ${kpiInline('Status','running')}
@@ -1102,9 +1102,9 @@ function renderDbt(main){
   markAgentRunning('dbt');
   main.insertAdjacentHTML('beforeend', `
     <div class="grid-4">
-      ${kpi('Models generated','8','3 staging · 3 marts · 2 snapshots')}
-      ${kpi('Tests','42','uniqueness · not_null · relationships · custom')}
-      ${kpi('Macros','6','all from Cognizant macro library')}
+      ${kpi('Models generated','13','8 staging · 4 marts · 1 macro')}
+      ${kpi('Tests','38','uniqueness · not_null · relationships · custom')}
+      ${kpi('Macros','1','hash_pii — Cognizant reusable')}
       ${kpi('dbt style guide','v2.1','Custom extension')}
     </div>
     <div class="card">
@@ -1112,16 +1112,18 @@ function renderDbt(main){
       <div class="card-sub">Preview of representative artifacts. The full tree is committed to <code>dbt/models/ccb/</code>.</div>
       <div class="tabs">
         <div class="tab active" data-tab="src">sources.yml</div>
-        <div class="tab" data-tab="stg">stg_customer.sql</div>
-        <div class="tab" data-tab="dim">dim_customer.sql</div>
-        <div class="tab" data-tab="fct">fct_order.sql</div>
+        <div class="tab" data-tab="stg">stg_ccb__person.sql</div>
+        <div class="tab" data-tab="dim">dim_customer_360.sql</div>
+        <div class="tab" data-tab="fct">fct_bill.sql</div>
+        <div class="tab" data-tab="pay">fct_payment.sql</div>
         <div class="tab" data-tab="macro">macros/hash_pii.sql</div>
         <div class="tab" data-tab="schema">schema.yml</div>
       </div>
       <div data-panel="src"><div class="code">${escape(SOURCES_YML)}</div></div>
-      <div data-panel="stg" class="hidden"><div class="code">${escape(STG_CUSTOMER)}</div></div>
-      <div data-panel="dim" class="hidden"><div class="code">${escape(DIM_CUSTOMER)}</div></div>
-      <div data-panel="fct" class="hidden"><div class="code">${escape(FCT_ORDER)}</div></div>
+      <div data-panel="stg" class="hidden"><div class="code">${escape(STG_PERSON)}</div></div>
+      <div data-panel="dim" class="hidden"><div class="code">${escape(DIM_CUSTOMER_360)}</div></div>
+      <div data-panel="fct" class="hidden"><div class="code">${escape(FCT_BILL)}</div></div>
+      <div data-panel="pay" class="hidden"><div class="code">${escape(FCT_PAYMENT)}</div></div>
       <div data-panel="macro" class="hidden"><div class="code">${escape(MACRO_HASH)}</div></div>
       <div data-panel="schema" class="hidden"><div class="code">${escape(DBT_SCHEMA_YML)}</div></div>
     </div>
@@ -1131,11 +1133,11 @@ function renderDbt(main){
       <div class="card-sub">The Coding &amp; Code Review Agent lints its own output against the enterprise dbt style guide and Cognizant reference architecture.</div>
       ${checkList([
         ['ok','All model names match convention <code>{layer}_{source}__{entity}</code>'],
-        ['ok','All PII columns wrapped with <code>hash_pii</code> macro in staging'],
-        ['ok','Incremental strategy set to <code>merge</code> with unique_key resolved'],
-        ['ok','Snapshots configured for SCD-2 on <code>dim_customer</code> and <code>dim_product</code>'],
+        ['ok','All PII columns (EMAILID, ADDRESS1) wrapped with <code>hash_pii</code> macro in staging'],
+        ['ok','Incremental strategy set to <code>merge</code> with unique_key resolved on all 8 stagings'],
+        ['ok','Marts <code>dim_customer_360</code> / <code>dim_meter</code> / <code>fct_bill</code> / <code>fct_payment</code> generated'],
         ['ok','Reference tests link marts to conformed dimensions'],
-        ['warn','<code>order_amount</code> is currency-typed but source is untyped — added test for <code>&gt;= 0</code>'],
+        ['warn','<code>TOTAL_AMOUNT</code> / <code>PAY_AMT</code> are currency-typed but source is untyped — added test for <code>&gt;= 0</code>'],
       ])}
     </div>
 
@@ -1159,112 +1161,133 @@ sources:
     loader: fivetran
     loaded_at_field: _fivetran_synced
     freshness:
-      warn_after: {count: 45, period: minute}
+      warn_after:  {count: 45, period: minute}
       error_after: {count: 90, period: minute}
     tables:
-      - name: customer
+      - name: person
         columns:
-          - name: customer_id
+          - name: PER_ID
             tests: [unique, not_null]
-          - name: email_address
+          - name: EMAILID
             meta: {pii: true, classification: restricted}
-      - name: order
+          - name: ADDRESS1
+            meta: {pii: true, classification: restricted}
+      - name: account
         columns:
-          - name: order_id
+          - name: ACCT_ID
             tests: [unique, not_null]
-          - name: customer_id
+          - name: PER_ID
             tests:
-              - relationships:
-                  to: source('oracle_ccb','customer')
-                  field: customer_id
-      - name: product
+              - relationships: {to: source('oracle_ccb','person'), field: PER_ID}
+      - name: bill
         columns:
-          - name: product_id
+          - name: BILL_ID
+            tests: [unique, not_null]
+          - name: ACCT_ID
+            tests:
+              - relationships: {to: source('oracle_ccb','account'), field: ACCT_ID}
+      - name: payment
+        columns:
+          - name: PAY_ID
             tests: [unique, not_null]
 `;
-const STG_CUSTOMER = `-- dbt/models/ccb/staging/stg_ccb__customer.sql
+const STG_PERSON = `-- dbt/models/ccb/staging/stg_ccb__person.sql
 {{ config(
     materialized='incremental',
-    unique_key='customer_id',
+    unique_key='per_id',
     on_schema_change='append_new_columns',
     tags=['ccb','staging','pii']
 ) }}
 
 with src as (
-    select * from {{ source('oracle_ccb','customer') }}
+    select * from {{ source('oracle_ccb','person') }}
     {% if is_incremental() %}
-      where modified_timestamp > (select coalesce(max(modified_timestamp),'1900-01-01') from {{ this }})
+      where MODIFIED_DTTM > (select coalesce(max(modified_dttm),'1900-01-01') from {{ this }})
     {% endif %}
-),
-
-renamed as (
-    select
-        customer_id                              as customer_key,
-        {{ hash_pii('first_name') }}             as first_name_hash,
-        {{ hash_pii('last_name') }}              as last_name_hash,
-        {{ hash_pii('email_address') }}          as email_hash,
-        {{ hash_pii('phone_number') }}           as phone_hash,
-        {{ hash_pii('street_address') }}         as street_hash,
-        city,
-        state,
-        postal_code,
-        customer_segment,
-        created_timestamp,
-        modified_timestamp,
-        current_timestamp()                      as _stg_loaded_at
-    from src
 )
-select * from renamed
-`;
-const DIM_CUSTOMER = `-- dbt/models/ccb/marts/dim_customer.sql
-{{ config(
-    materialized='table',
-    cluster_by=['customer_key'],
-    tags=['ccb','marts']
-) }}
-
-with s as (select * from {{ ref('stg_ccb__customer') }}),
-     g as (select * from {{ ref('geo_ref_state') }})
-
 select
-    s.customer_key,
-    s.first_name_hash,
-    s.last_name_hash,
-    s.email_hash,
-    s.city,
-    g.state_name,
-    s.postal_code,
-    s.customer_segment,
-    s.created_timestamp,
-    s.modified_timestamp
-from s
-left join g on s.state = g.state_code
+    PER_ID                              as per_id,
+    PER_OR_BUS_FLG                      as person_or_business_flag,
+    LANGUAGE_CD                         as language_cd,
+    {{ hash_pii('ADDRESS1') }}          as address1_hash,
+    CITY                                as city,
+    STATE                               as state,
+    POSTAL                              as postal_code,
+    {{ hash_pii('EMAILID') }}           as email_hash,
+    HOUSE_TYPE                          as house_type,
+    RECV_MKTG_INFO_FLG                  as marketing_opt_in_sw,
+    MODIFIED_DTTM                       as modified_dttm
+from src
 `;
-const FCT_ORDER = `-- dbt/models/ccb/marts/fct_order.sql
-{{ config(
-    materialized='incremental',
-    unique_key='order_key',
-    tags=['ccb','marts','fact']
-) }}
+const DIM_CUSTOMER_360 = `-- dbt/models/ccb/marts/dim_customer_360.sql
+{{ config(materialized='table', cluster_by=['acct_id'],
+          tags=['ccb','marts','customer']) }}
 
-with o as (select * from {{ ref('stg_ccb__order') }}),
-     c as (select customer_key from {{ ref('dim_customer') }}),
-     p as (select product_key   from {{ ref('dim_product') }})
-
+with p as (select * from {{ ref('stg_ccb__person') }}),
+     a as (select * from {{ ref('stg_ccb__account') }}),
+     m as (select * from {{ ref('stg_ccb__premise') }})
 select
-    o.order_id                                as order_key,
-    o.customer_id                             as customer_key,
-    o.dealer_id                               as dealer_key,
-    o.product_id                              as product_key,
-    o.order_date,
-    o.order_status,
-    o.order_amount,
-    o.discount_amount,
-    o.order_amount - o.discount_amount        as net_amount,
-    o.modified_timestamp
-from o
-inner join c on o.customer_id = c.customer_key
-inner join p on o.product_id  = p.product_key
+    a.acct_id,
+    a.per_id,
+    p.email_hash,
+    p.address1_hash                  as mailing_address_hash,
+    m.city                           as service_city,
+    m.state                          as service_state,
+    m.postal_code                    as service_postal_code,
+    a.customer_class,
+    a.collection_class,
+    a.bill_cycle,
+    a.setup_dt,
+    a.cis_division,
+    p.language_cd,
+    p.marketing_opt_in_sw
+from a
+left join p using (per_id)
+left join m on m.prem_id = a.mailing_prem_id
+`;
+const FCT_BILL = `-- dbt/models/ccb/marts/fct_bill.sql
+{{ config(materialized='incremental', unique_key='bill_id',
+          tags=['ccb','marts','fact','financial']) }}
+
+with b as (select * from {{ ref('stg_ccb__bill') }}),
+     a as (select acct_id from {{ ref('stg_ccb__account') }})
+select
+    b.bill_id,
+    b.acct_id,
+    b.bill_cycle,
+    b.bill_status,
+    b.bill_dt,
+    b.due_dt,
+    b.bill_period_start,
+    b.late_pay_charge_sw,
+    b.total_amount,
+    datediff('day', b.bill_period_start, b.bill_dt) as bill_days,
+    case when b.bill_status = '60' then 'in_review'
+         when b.late_pay_charge_sw = 'Y' then 'past_due'
+         when b.bill_status = '70' then 'cancelled'
+         else 'complete' end                        as bill_state
+from b
+inner join a using (acct_id)
+`;
+const FCT_PAYMENT = `-- dbt/models/ccb/marts/fct_payment.sql
+{{ config(materialized='incremental', unique_key='pay_id',
+          tags=['ccb','marts','fact','financial']) }}
+
+with p as (select * from {{ ref('stg_ccb__payment') }}),
+     b as (select bill_id, total_amount from {{ ref('stg_ccb__bill') }})
+select
+    p.pay_id,
+    p.acct_id,
+    p.bill_id,
+    p.pay_amount,
+    b.total_amount                as billed_amount,
+    p.pay_amount - b.total_amount as amount_variance,
+    (p.pay_amount > b.total_amount) as is_overpayment,
+    p.pay_status,
+    p.pay_dt,
+    p.tender_type
+from p
+left join b using (bill_id)
 `;
 const MACRO_HASH = `-- dbt/macros/hash_pii.sql (Cognizant reusable macro)
 {% macro hash_pii(col, salt_ref='enterprise_pii_salt') %}
@@ -1277,30 +1300,39 @@ const MACRO_HASH = `-- dbt/macros/hash_pii.sql (Cognizant reusable macro)
 const DBT_SCHEMA_YML = `# dbt/models/ccb/schema.yml
 version: 2
 models:
-  - name: dim_customer
-    description: "Customer dimension. PII hashed; salt rotated quarterly."
+  - name: dim_customer_360
+    description: "Conformed customer view — joins person, account and mailing premise. PII hashed."
     columns:
-      - name: customer_key
+      - name: acct_id
         tests: [unique, not_null]
       - name: email_hash
         meta: {pii: true, classification: restricted}
         tests: [not_null]
 
-  - name: fct_order
-    description: "Order fact. Grain = order_id."
+  - name: fct_bill
+    description: "Bill fact at bill_id grain. Amount, cycle, and bill state (complete/past-due/in-review/cancelled)."
     tests:
       - dbt_utils.expression_is_true:
-          expression: "order_amount >= 0"
-      - dbt_utils.expression_is_true:
-          expression: "discount_amount <= order_amount"
+          expression: "total_amount >= 0"
     columns:
-      - name: order_key
+      - name: bill_id
         tests: [unique, not_null]
-      - name: customer_key
+      - name: acct_id
         tests:
           - relationships:
-              to: ref('dim_customer')
-              field: customer_key
+              to: ref('dim_customer_360')
+              field: acct_id
+
+  - name: fct_payment
+    description: "Payment fact at pay_id grain, joined to bill for overpayment detection."
+    columns:
+      - name: pay_id
+        tests: [unique, not_null]
+      - name: bill_id
+        tests:
+          - relationships:
+              to: ref('fct_bill')
+              field: bill_id
 `;
 
 /* ==================================================================
@@ -1312,28 +1344,29 @@ function renderProfile(main){
   markAgentRunning('profile');
 
   const rows = [
-    {col:'customer.customer_id', dtype:'NUMBER', rows:184_320, nulls:0.0, distinct:100, min:1, max:184320, sample:'12,458'},
-    {col:'customer.email_address', dtype:'STRING', rows:184_320, nulls:1.4, distinct:99.6, min:'a@a.co', max:'zz@zz.co', sample:'j.doe@example.com'},
-    {col:'customer.state', dtype:'STRING', rows:184_320, nulls:0.2, distinct:52/184320*100, min:'AK', max:'WY', sample:'MN'},
-    {col:'customer.postal_code', dtype:'STRING', rows:184_320, nulls:0.5, distinct:2.1, min:'00501', max:'99950', sample:'55344'},
-    {col:'order.order_id',   dtype:'NUMBER', rows:2_411_982, nulls:0, distinct:100, min:1, max:2411982, sample:'1,204,338'},
-    {col:'order.order_amount', dtype:'NUMBER', rows:2_411_982, nulls:0, distinct:38.4, min:5.00, max:98450.00, sample:'842.15'},
-    {col:'order.discount_amount', dtype:'NUMBER', rows:2_411_982, nulls:0.4, distinct:6.1, min:0.00, max:15000.00, sample:'50.00'},
-    {col:'product.product_id', dtype:'NUMBER', rows:1_284, nulls:0, distinct:100, min:1, max:1284, sample:'411'},
-    {col:'product.list_price', dtype:'NUMBER', rows:1_284, nulls:0, distinct:87, min:12.50, max:11250.00, sample:'389.99'},
+    {col:'person.PER_ID',        dtype:'STRING', rows:1_000, nulls:0.0, distinct:100,  min:'1000000001', max:'1000001000', sample:'1000000412'},
+    {col:'person.EMAILID',       dtype:'STRING', rows:1_000, nulls:2.1, distinct:97.9, min:'a@a.co',     max:'zz@zz.co',   sample:'j.doe@gmail.com'},
+    {col:'person.STATE',         dtype:'STRING', rows:1_000, nulls:0.0, distinct:0.1,  min:'NY',         max:'NY',          sample:'NY'},
+    {col:'person.POSTAL',        dtype:'STRING', rows:1_000, nulls:0.5, distinct:2.0,  min:'10001',      max:'11375',       sample:'11217'},
+    {col:'account.ACCT_ID',      dtype:'STRING', rows:1_000, nulls:0.0, distinct:100,  min:'2000000001', max:'2000001000', sample:'2000000412'},
+    {col:'account.CIS_DIVISION', dtype:'STRING', rows:1_000, nulls:0.0, distinct:0.5,  min:'BKLYN',      max:'WSTCH',       sample:'MHTN'},
+    {col:'bill.BILL_ID',         dtype:'STRING', rows:3_000, nulls:0.0, distinct:100,  min:'BILL0000001',max:'BILL0003000',sample:'BILL0001240'},
+    {col:'bill.TOTAL_AMOUNT',    dtype:'NUMBER', rows:3_000, nulls:0.0, distinct:82.3, min:15.00,        max:23540.00,      sample:'842.15'},
+    {col:'bill.LATE_PAY_CHARGE_SW', dtype:'STRING', rows:3_000, nulls:0.0, distinct:0.07, min:'N',      max:'Y',            sample:'N'},
+    {col:'payment.PAY_AMT',      dtype:'NUMBER', rows:2_500, nulls:0.0, distinct:84.0, min:5.20,         max:23860.00,      sample:'842.15'},
   ];
 
   main.insertAdjacentHTML('beforeend', `
     <div class="grid-4">
-      ${kpi('Rows sampled','2.6M','across 3 entities')}
-      ${kpi('Null hotspots','2','discount_amount · email')}
-      ${kpi('Uniqueness anomalies','0','all PKs verified')}
-      ${kpi('Referential integrity','100%','FKs resolved')}
+      ${kpi('Rows sampled','13K','across 8 CC&amp;B entities')}
+      ${kpi('Null hotspots','1','EMAILID (2.1%)')}
+      ${kpi('Uniqueness anomalies','0','all 8 PKs verified')}
+      ${kpi('Referential integrity','100%','ACCT→PER · BILL→ACCT · PAY→BILL')}
     </div>
 
     <div class="card">
       <h3>Column profile summary</h3>
-      <div class="card-sub">Full profiling report is materialised into <code>DP_META.PROFILE_DEALER_SALES</code> and refreshed on every sync.</div>
+      <div class="card-sub">Full profiling report is materialised into <code>DP_META.PROFILE_CCB</code> and refreshed on every sync.</div>
       <table class="tbl">
         <thead><tr><th>Column</th><th>Type</th><th>Rows</th><th>Null %</th><th>Distinct %</th><th>Min</th><th>Max</th><th>Sample</th></tr></thead>
         <tbody>
@@ -1353,25 +1386,26 @@ function renderProfile(main){
 
     <div class="grid-2">
       <div class="card">
-        <h3>Distribution · order_amount</h3>
-        <div class="card-sub">Values are right-skewed with a long tail — profiler recommends log transform for BI aggregates.</div>
-        ${bar('$0–$100', 42, 'ok')}
-        ${bar('$100–$500', 63, 'ok')}
-        ${bar('$500–$1K', 88, 'ok')}
-        ${bar('$1K–$5K', 55)}
-        ${bar('$5K–$10K', 22)}
-        ${bar('$10K–$50K', 7, 'warn')}
-        ${bar('$50K+', 2, 'err')}
+        <h3>Distribution · bill.TOTAL_AMOUNT</h3>
+        <div class="card-sub">Right-skewed with a long tail on commercial accounts — profiler recommends log transform for BI aggregates.</div>
+        ${bar('$0–$100', 1, 'ok')}
+        ${bar('$100–$250', 9, 'ok')}
+        ${bar('$250–$500', 22, 'ok')}
+        ${bar('$500–$1K', 31, 'ok')}
+        ${bar('$1K–$2.5K', 27)}
+        ${bar('$2.5K–$10K', 8, 'warn')}
+        ${bar('$10K+', 2, 'err')}
       </div>
       <div class="card">
         <h3>Anomalies detected</h3>
         <div class="card-sub">Fed to the Data Quality Agent as candidate rules.</div>
         ${checkList([
-          ['warn','<code>order.discount_amount</code> exceeds <code>order.order_amount</code> in 14 rows (0.0006%) — will fail new DQ test'],
-          ['warn','<code>customer.email_address</code> 1.4% null — expected < 0.5% per SLA'],
-          ['ok','<code>customer.postal_code</code> matches US regex 99.7% (acceptable)'],
-          ['ok','No orphan <code>customer_id</code> or <code>product_id</code> in orders'],
-          ['ok','<code>order_status</code> distinct set = {NEW, PENDING, SHIPPED, DELIVERED, CANCELLED}'],
+          ['warn','<code>payment.PAY_AMT</code> exceeds joined <code>bill.TOTAL_AMOUNT</code> in 51 rows (2.0%) — will fail new DQ test'],
+          ['warn','<code>bill.LATE_PAY_CHARGE_SW=Y</code> in 96 rows — expected to surface in collections'],
+          ['warn','<code>person.EMAILID</code> 2.1% null — digital channels require ≥ 97.5% coverage'],
+          ['ok','<code>person.POSTAL</code> matches 5-digit US format 99.5% (acceptable)'],
+          ['ok','No orphan <code>ACCT_ID</code> or <code>PER_ID</code> across accounts/bills/payments'],
+          ['ok','<code>BILL_STAT_FLG</code> distinct set = {50 · 60 · 70}'],
         ])}
       </div>
     </div>
@@ -1401,10 +1435,10 @@ function renderDQ(main){
   markAgentRunning('dq');
   main.insertAdjacentHTML('beforeend',`
     <div class="grid-4">
-      ${kpi('Rules generated','42','across 3 entities')}
-      ${kpi('Severity · Blocker','7','fail the pipeline')}
-      ${kpi('Severity · Warn','19','notify + continue')}
-      ${kpi('Coverage','88%','columns with at least one rule')}
+      ${kpi('Rules generated','38','across 8 CC&amp;B entities')}
+      ${kpi('Severity · Blocker','8','fail the pipeline')}
+      ${kpi('Severity · Warn','15','notify + continue')}
+      ${kpi('Coverage','86%','columns with at least one rule')}
     </div>
 
     <div class="card">
@@ -1413,16 +1447,18 @@ function renderDQ(main){
       <table class="tbl">
         <thead><tr><th>Rule ID</th><th>Entity.Column</th><th>Expectation</th><th>Severity</th><th>Owner</th></tr></thead>
         <tbody>
-          <tr><td class="mono">DQ-001</td><td class="mono">customer.customer_id</td><td>unique · not_null</td><td><span class="tag pii">Blocker</span></td><td>Customer Operations COE</td></tr>
-          <tr><td class="mono">DQ-002</td><td class="mono">customer.email_address</td><td>null_pct &lt; 0.5%</td><td><span class="tag pii-quasi">Warn</span></td><td>Customer Operations COE</td></tr>
-          <tr><td class="mono">DQ-003</td><td class="mono">order.order_id</td><td>unique · not_null</td><td><span class="tag pii">Blocker</span></td><td>Customer Operations COE</td></tr>
-          <tr><td class="mono">DQ-004</td><td class="mono">order.customer_id</td><td>foreign key → dim_customer</td><td><span class="tag pii">Blocker</span></td><td>Data Platform</td></tr>
-          <tr><td class="mono">DQ-005</td><td class="mono">order.order_amount</td><td>≥ 0</td><td><span class="tag pii">Blocker</span></td><td>Finance</td></tr>
-          <tr><td class="mono">DQ-006</td><td class="mono">order.discount_amount</td><td>≤ order_amount</td><td><span class="tag pii">Blocker</span></td><td>Finance</td></tr>
-          <tr><td class="mono">DQ-007</td><td class="mono">order.order_status</td><td>in (NEW,PENDING,SHIPPED,DELIVERED,CANCELLED)</td><td><span class="tag pii-quasi">Warn</span></td><td>Customer Operations COE</td></tr>
-          <tr><td class="mono">DQ-008</td><td class="mono">product.list_price</td><td>≥ 0 · anomaly z-score &lt; 4</td><td><span class="tag pii-quasi">Warn</span></td><td>Finance</td></tr>
-          <tr><td class="mono">DQ-009</td><td class="mono">customer.postal_code</td><td>matches ^\\d{5}(-\\d{4})?$</td><td><span class="tag pii-quasi">Warn</span></td><td>Data Platform</td></tr>
-          <tr><td class="mono">DQ-010</td><td class="mono">source.freshness</td><td>≤ 15 min lag</td><td><span class="tag pii-quasi">Warn</span></td><td>Data Platform</td></tr>
+          <tr><td class="mono">DQ-001</td><td class="mono">person.PER_ID</td><td>unique · not_null</td><td><span class="tag pii">Blocker</span></td><td>Customer Operations COE</td></tr>
+          <tr><td class="mono">DQ-002</td><td class="mono">person.EMAILID</td><td>null_pct &lt; 2.5%</td><td><span class="tag pii-quasi">Warn</span></td><td>Customer Operations COE</td></tr>
+          <tr><td class="mono">DQ-003</td><td class="mono">account.ACCT_ID</td><td>unique · not_null</td><td><span class="tag pii">Blocker</span></td><td>Customer Operations COE</td></tr>
+          <tr><td class="mono">DQ-004</td><td class="mono">account.PER_ID</td><td>foreign key → person.PER_ID</td><td><span class="tag pii">Blocker</span></td><td>Data Platform</td></tr>
+          <tr><td class="mono">DQ-005</td><td class="mono">bill.BILL_ID</td><td>unique · not_null</td><td><span class="tag pii">Blocker</span></td><td>Customer Operations COE</td></tr>
+          <tr><td class="mono">DQ-006</td><td class="mono">bill.ACCT_ID</td><td>foreign key → account.ACCT_ID</td><td><span class="tag pii">Blocker</span></td><td>Data Platform</td></tr>
+          <tr><td class="mono">DQ-007</td><td class="mono">bill.TOTAL_AMOUNT</td><td>≥ 0</td><td><span class="tag pii">Blocker</span></td><td>Finance</td></tr>
+          <tr><td class="mono">DQ-008</td><td class="mono">bill.BILL_STAT_FLG</td><td>in ('50','60','70')</td><td><span class="tag pii-quasi">Warn</span></td><td>Customer Operations COE</td></tr>
+          <tr><td class="mono">DQ-009</td><td class="mono">payment.PAY_AMT</td><td>≥ 0</td><td><span class="tag pii">Blocker</span></td><td>Finance</td></tr>
+          <tr><td class="mono">DQ-010</td><td class="mono">payment.*</td><td>PAY_AMT ≤ joined bill.TOTAL_AMOUNT (else flag)</td><td><span class="tag pii-quasi">Warn</span></td><td>Finance</td></tr>
+          <tr><td class="mono">DQ-011</td><td class="mono">person.POSTAL</td><td>matches ^\\d{5}(-\\d{4})?$</td><td><span class="tag pii-quasi">Warn</span></td><td>Data Platform</td></tr>
+          <tr><td class="mono">DQ-012</td><td class="mono">source.freshness</td><td>≤ 15 min lag</td><td><span class="tag pii-quasi">Warn</span></td><td>Data Platform</td></tr>
         </tbody>
       </table>
     </div>
@@ -1453,53 +1489,70 @@ function renderDQ(main){
 const DBT_TESTS = `# dbt/models/ccb/marts/schema_tests.yml
 version: 2
 models:
-  - name: fct_order
+  - name: fct_bill
     columns:
-      - name: order_key
+      - name: bill_id
         tests: [unique, not_null]
-      - name: order_amount
+      - name: total_amount
         tests:
           - dbt_utils.expression_is_true: { expression: ">= 0" }
-      - name: discount_amount
-        tests:
-          - dbt_utils.expression_is_true: { expression: "<= order_amount" }
-      - name: order_status
+      - name: bill_status
         tests:
           - accepted_values:
-              values: [NEW, PENDING, SHIPPED, DELIVERED, CANCELLED]
+              values: ['50','60','70']
               severity: warn
-      - name: customer_key
+      - name: acct_id
         tests:
           - relationships:
-              to: ref('dim_customer')
-              field: customer_key
+              to: ref('dim_customer_360')
+              field: acct_id
+  - name: fct_payment
+    columns:
+      - name: pay_id
+        tests: [unique, not_null]
+      - name: pay_amount
+        tests:
+          - dbt_utils.expression_is_true: { expression: ">= 0" }
+      - name: bill_id
+        tests:
+          - relationships:
+              to: ref('fct_bill')
+              field: bill_id
 `;
 const GE_SUITE = `# dq/ge_suites/oracle_ccb.yml
 suite_name: oracle_ccb_full
 expectations:
-  - expect_column_values_to_be_unique: {column: customer_id}
-  - expect_column_values_to_not_be_null: {column: customer_id}
-  - expect_column_value_lengths_to_equal: {column: postal_code, value: 5, mostly: 0.99}
+  - expect_column_values_to_be_unique:  {column: PER_ID}
+  - expect_column_values_to_not_be_null: {column: PER_ID}
+  - expect_column_values_to_be_unique:  {column: ACCT_ID}
+  - expect_column_values_to_be_in_set:
+      column: BILL_STAT_FLG
+      value_set: ['50','60','70']
+  - expect_column_value_lengths_to_equal: {column: POSTAL, value: 5, mostly: 0.99}
   - expect_column_values_to_match_regex:
-      column: email_address
+      column: EMAILID
       regex: '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$'
-      mostly: 0.985
+      mostly: 0.98
+  - expect_column_values_to_be_between:
+      column: TOTAL_AMOUNT
+      min_value: 0
+      max_value: 50000
   - expect_column_pair_values_A_to_be_greater_than_B:
-      column_A: order_amount
-      column_B: discount_amount
+      column_A: TOTAL_AMOUNT
+      column_B: PAY_AMT
       or_equal: true
 `;
 const SNOW_ALERTS = `-- infra/snowflake/alerts/oracle_ccb.sql
-CREATE OR REPLACE ALERT DP_META.ALERT_DEALER_SALES_FRESHNESS
+CREATE OR REPLACE ALERT DP_META.ALERT_ORACLE_CCB_FRESHNESS
   WAREHOUSE = WH_MONITOR_XSMALL
   SCHEDULE  = '15 MINUTE'
 IF (EXISTS (
     SELECT 1 FROM DP_META.SOURCE_FRESHNESS
-    WHERE source = 'DEALER_SALES_CRM'
+    WHERE source = 'ORACLE_CCB'
       AND minutes_since_last_sync > 15
 ))
 THEN CALL DP_META.NOTIFY_PAGE(
-  channel => 'data-platform-oncall',
+  channel => 'customer-ops-oncall',
   subject => 'Oracle CC&amp;B freshness SLA breach'
 );
 `;
@@ -1512,26 +1565,27 @@ function renderPII(main){
     'The Data Governance & Classification Agent tags each column with a sensitivity class, proposes masking policies, and registers everything into the Enterprise Data Catalog. A human data steward approves before the config becomes law.';
   markAgentRunning('pii');
   const rows = [
-    ['customer','first_name','PII','Restricted','Hash (SHA-256) + salt','No'],
-    ['customer','last_name','PII','Restricted','Hash (SHA-256) + salt','No'],
-    ['customer','email_address','PII','Restricted','Hash + partial reveal (domain)','No'],
-    ['customer','phone_number','PII','Restricted','Hash','No'],
-    ['customer','street_address','PII','Restricted','Redact','No'],
-    ['customer','city','Quasi-identifier','Internal','Retain','No'],
-    ['customer','state','Public','Public','Retain','Yes'],
-    ['customer','postal_code','Quasi-identifier','Internal','Truncate to 3 digits','No'],
-    ['customer','customer_segment','Public','Public','Retain','Yes'],
-    ['order','order_amount','Financial','Confidential','Retain (masked in non-prod)','No'],
-    ['order','discount_amount','Financial','Confidential','Retain (masked in non-prod)','No'],
-    ['product','list_price','Financial','Confidential','Retain','No'],
+    ['person','EMAILID','PII','Restricted','Hash (SHA-256) + salt','No'],
+    ['person','ADDRESS1','PII','Restricted','Hash (SHA-256) + salt','No'],
+    ['person','GEO_CODE','PII','Restricted','Redact','No'],
+    ['person','CITY','Quasi-identifier','Internal','Retain','No'],
+    ['person','STATE','Quasi-identifier','Internal','Retain','No'],
+    ['person','POSTAL','Quasi-identifier','Internal','Truncate to 3 digits','No'],
+    ['person','LANGUAGE_CD','Public','Public','Retain','Yes'],
+    ['premise','ADDRESS1','PII','Restricted','Hash (SHA-256) + salt','No'],
+    ['account','ACCT_ID','Confidential','Internal ID','Retain','No'],
+    ['account','CIS_DIVISION','Public','Public','Retain','Yes'],
+    ['bill','TOTAL_AMOUNT','Financial','Confidential','Retain (masked in non-prod)','No'],
+    ['payment','PAY_AMT','Financial','Confidential','Retain (masked in non-prod)','No'],
+    ['service_agreement','HIGH_BILL_AMT','Financial','Confidential','Retain (masked in non-prod)','No'],
   ];
 
   main.insertAdjacentHTML('beforeend',`
     <div class="grid-4">
-      ${kpi('Columns tagged','28 / 28','100%')}
-      ${kpi('Restricted PII','5','hashed + salted')}
-      ${kpi('Confidential','3','masked in non-prod')}
-      ${kpi('Public','20','safe for broad access')}
+      ${kpi('Columns tagged','~90 / ~90','100%')}
+      ${kpi('Restricted PII','4','hashed + salted')}
+      ${kpi('Confidential','7','masked in non-prod')}
+      ${kpi('Public / Quasi','~79','safe for broad access')}
     </div>
 
     <div class="card">
@@ -1576,23 +1630,30 @@ function renderPII(main){
 const MASK_SQL = `-- infra/snowflake/masking/oracle_ccb.sql
 CREATE MASKING POLICY IF NOT EXISTS gov.mask_restricted_hash AS (val string) RETURNS string ->
   CASE
-    WHEN CURRENT_ROLE() IN ('R_PII_STEWARD','R_APP_DEALER_SALES') THEN val
-    ELSE SHA2(val || SYSTEM$GET_TAG('gov.pii_salt', 'DEALER_SALES','SCHEMA'), 256)
+    WHEN CURRENT_ROLE() IN ('R_PII_STEWARD','R_APP_CCB') THEN val
+    ELSE SHA2(val || SYSTEM$GET_TAG('gov.pii_salt', 'CCB','SCHEMA'), 256)
   END;
 
 CREATE MASKING POLICY IF NOT EXISTS gov.mask_financial AS (val number) RETURNS number ->
   CASE
-    WHEN CURRENT_ROLE() IN ('R_FINANCE','R_APP_DEALER_SALES') THEN val
+    WHEN CURRENT_ROLE() IN ('R_FINANCE','R_APP_CCB') THEN val
     WHEN CURRENT_DATABASE() ILIKE 'DP_PROD%' THEN val
     ELSE NULL
   END;
 
-ALTER TABLE DP_RAW.RAW_CCB.CUSTOMER
-  MODIFY COLUMN email_address SET MASKING POLICY gov.mask_restricted_hash,
-  MODIFY COLUMN first_name    SET MASKING POLICY gov.mask_restricted_hash,
-  MODIFY COLUMN last_name     SET MASKING POLICY gov.mask_restricted_hash,
-  MODIFY COLUMN phone_number  SET MASKING POLICY gov.mask_restricted_hash,
-  MODIFY COLUMN street_address SET MASKING POLICY gov.mask_restricted_hash;
+ALTER TABLE DP_RAW.RAW_CCB.PERSON
+  MODIFY COLUMN EMAILID  SET MASKING POLICY gov.mask_restricted_hash,
+  MODIFY COLUMN ADDRESS1 SET MASKING POLICY gov.mask_restricted_hash,
+  MODIFY COLUMN GEO_CODE SET MASKING POLICY gov.mask_restricted_hash;
+
+ALTER TABLE DP_RAW.RAW_CCB.PREMISE
+  MODIFY COLUMN ADDRESS1 SET MASKING POLICY gov.mask_restricted_hash;
+
+ALTER TABLE DP_RAW.RAW_CCB.BILL
+  MODIFY COLUMN TOTAL_AMOUNT SET MASKING POLICY gov.mask_financial;
+
+ALTER TABLE DP_RAW.RAW_CCB.PAYMENT
+  MODIFY COLUMN PAY_AMT SET MASKING POLICY gov.mask_financial;
 `;
 const CATALOG_JSON = `{
   "asset": "snowflake://DP_RAW.RAW_CCB",
@@ -1600,14 +1661,14 @@ const CATALOG_JSON = `{
   "owner": "customer_ops_coe@coned.com",
   "steward": "s.kandasamy@cognizant.com",
   "tags": {
-    "governance.pii": ["first_name","last_name","email_address","phone_number","street_address"],
-    "governance.quasi": ["city","postal_code"],
-    "governance.confidential": ["order_amount","discount_amount","list_price"],
-    "governance.retention": "P7Y"
+    "governance.pii":          ["person.EMAILID","person.ADDRESS1","person.GEO_CODE","premise.ADDRESS1"],
+    "governance.quasi":        ["person.CITY","person.POSTAL","person.STATE","premise.CITY","premise.POSTAL"],
+    "governance.confidential": ["bill.TOTAL_AMOUNT","payment.PAY_AMT","service_agreement.HIGH_BILL_AMT"],
+    "governance.retention":    "P7Y"
   },
   "lineage": {
     "sources": ["rest_api://oracle-ccb"],
-    "downstream": ["dbt://dim_customer","dbt://dim_product","dbt://fct_order","powerbi://Customer 360 - Certified"]
+    "downstream": ["dbt://dim_customer_360","dbt://dim_meter","dbt://fct_bill","dbt://fct_payment","powerbi://Customer 360 — Certified"]
   },
   "quality_scorecard_ref": "great_expectations://oracle_ccb_full"
 }`;
@@ -1621,49 +1682,49 @@ function renderSynth(main){
   markAgentRunning('synth');
   main.insertAdjacentHTML('beforeend',`
     <div class="grid-4">
-      ${kpi('Fixtures','12','3 entities × 4 scenarios')}
-      ${kpi('Rows generated','250K','deterministic seed 42')}
+      ${kpi('Fixtures','4','person · account · bill · payment')}
+      ${kpi('Rows generated','~1.3K','deterministic seed 42')}
       ${kpi('Referential integrity','100%','FK-safe generation')}
       ${kpi('PII risk','0','no source values leaked')}
     </div>
 
     <div class="card">
-      <h3>Synthetic customer sample (masked-safe, ready for DEV)</h3>
+      <h3>Synthetic person sample (masked-safe, ready for DEV)</h3>
       <div class="card-sub">Generated with statistical fidelity to profile output. Salt for hashes rotates per environment.</div>
       <table class="tbl">
-        <thead><tr><th>customer_id</th><th>first_name</th><th>last_name</th><th>email_address</th><th>city</th><th>state</th><th>postal_code</th><th>segment</th></tr></thead>
+        <thead><tr><th>PER_ID</th><th>ADDRESS1</th><th>CITY</th><th>STATE</th><th>POSTAL</th><th>EMAILID</th><th>HOUSE_TYPE</th></tr></thead>
         <tbody>
-          <tr><td>1001</td><td>Ava</td><td>Reyes</td><td>ava.reyes@example.com</td><td>Minneapolis</td><td>MN</td><td>55344</td><td>Contractor</td></tr>
-          <tr><td>1002</td><td>Noah</td><td>Kim</td><td>noah.kim@example.com</td><td>Denver</td><td>CO</td><td>80202</td><td>Homeowner</td></tr>
-          <tr><td>1003</td><td>Priya</td><td>Shah</td><td>priya.shah@example.com</td><td>Bayfield</td><td>WI</td><td>54891</td><td>Homeowner</td></tr>
-          <tr><td>1004</td><td>Liam</td><td>Nguyen</td><td>liam.nguyen@example.com</td><td>Chicago</td><td>IL</td><td>60614</td><td>Contractor</td></tr>
-          <tr><td>1005</td><td>Sofia</td><td>Patel</td><td>sofia.patel@example.com</td><td>Austin</td><td>TX</td><td>73301</td><td>Builder</td></tr>
+          <tr><td>9000000001</td><td>128 Bergen St</td><td>Brooklyn</td><td>NY</td><td>11217</td><td>ava.reyes@gmail.com</td><td>SFR</td></tr>
+          <tr><td>9000000002</td><td>417 W 24th St</td><td>New York</td><td>NY</td><td>10001</td><td>noah.kim@gmail.com</td><td>APT</td></tr>
+          <tr><td>9000000003</td><td>36-15 30th Ave</td><td>Queens</td><td>NY</td><td>11101</td><td>priya.shah@gmail.com</td><td>MFR</td></tr>
+          <tr><td>9000000004</td><td>72 Grand Concourse</td><td>Bronx</td><td>NY</td><td>10451</td><td>liam.nguyen@gmail.com</td><td>APT</td></tr>
+          <tr><td>9000000005</td><td>15 Getty Sq</td><td>Yonkers</td><td>NY</td><td>10701</td><td>sofia.patel@gmail.com</td><td>SFR</td></tr>
         </tbody>
       </table>
     </div>
 
     <div class="grid-2">
       <div class="card">
-        <h3>Synthetic order sample</h3>
+        <h3>Synthetic bill sample</h3>
         <table class="tbl">
-          <thead><tr><th>order_id</th><th>customer_id</th><th>product_id</th><th>date</th><th>status</th><th>amount</th></tr></thead>
+          <thead><tr><th>BILL_ID</th><th>ACCT_ID</th><th>BILL_DT</th><th>DUE_DT</th><th>STATUS</th><th>TOTAL_AMOUNT</th></tr></thead>
           <tbody>
-            <tr><td>90001</td><td>1001</td><td>411</td><td>2026-06-14</td><td>DELIVERED</td><td>$842.15</td></tr>
-            <tr><td>90002</td><td>1002</td><td>512</td><td>2026-06-14</td><td>SHIPPED</td><td>$1,204.00</td></tr>
-            <tr><td>90003</td><td>1001</td><td>612</td><td>2026-06-15</td><td>PENDING</td><td>$389.99</td></tr>
-            <tr><td>90004</td><td>1003</td><td>411</td><td>2026-06-15</td><td>DELIVERED</td><td>$842.15</td></tr>
-            <tr><td>90005</td><td>1005</td><td>888</td><td>2026-06-15</td><td>NEW</td><td>$50.00</td></tr>
+            <tr><td>S-BILL000001</td><td>8000000001</td><td>2026-07-31</td><td>2026-08-20</td><td>50</td><td>$142.87</td></tr>
+            <tr><td>S-BILL000002</td><td>8000000002</td><td>2026-07-31</td><td>2026-08-20</td><td>50</td><td>$318.44</td></tr>
+            <tr><td>S-BILL000003</td><td>8000000003</td><td>2026-07-31</td><td>2026-08-20</td><td>60</td><td>$2,412.15</td></tr>
+            <tr><td>S-BILL000004</td><td>8000000004</td><td>2026-06-30</td><td>2026-07-20</td><td>50</td><td>$96.10</td></tr>
+            <tr><td>S-BILL000005</td><td>8000000005</td><td>2026-07-31</td><td>2026-08-20</td><td>50</td><td>$421.90</td></tr>
           </tbody>
         </table>
       </div>
       <div class="card">
         <h3>Statistical fidelity vs. source profile</h3>
         <div class="card-sub">Kolmogorov–Smirnov distance vs. profile stats. Lower is better.</div>
-        ${bar('order_amount', 96, 'ok')}
-        ${bar('list_price', 94, 'ok')}
-        ${bar('customer_segment freq', 99, 'ok')}
-        ${bar('state distribution', 92, 'ok')}
-        ${bar('order_status ratios', 98, 'ok')}
+        ${bar('TOTAL_AMOUNT', 96, 'ok')}
+        ${bar('PAY_AMT', 94, 'ok')}
+        ${bar('customer_class freq', 99, 'ok')}
+        ${bar('CIS_DIVISION distribution', 92, 'ok')}
+        ${bar('BILL_STAT_FLG ratios', 98, 'ok')}
       </div>
     </div>
 
@@ -1684,16 +1745,18 @@ function renderSynth(main){
 const SYNTH_CFG = `# testing/synth/oracle_ccb.yml
 seed: 42
 volume:
-  customer: 5000
-  order:    50000
-  product:  1284
+  person:  200
+  account: 200
+  bill:    600
+  payment: 500
 distributions:
-  order.order_amount: {kind: lognormal, mu: 6.1, sigma: 1.3, min: 5, max: 100000}
-  order.order_status: {kind: categorical, weights: {NEW:0.06, PENDING:0.14, SHIPPED:0.30, DELIVERED:0.48, CANCELLED:0.02}}
-  customer.state: {source_profile: profile-oracle-ccb-v1.json#state.hist}
+  bill.TOTAL_AMOUNT: {kind: lognormal, mu: 6.5, sigma: 0.8, min: 15, max: 25000}
+  bill.BILL_STAT_FLG: {kind: categorical, weights: {'50':0.94, '60':0.05, '70':0.01}}
+  person.CIS_DIVISION: {source_profile: profile-oracle-ccb-v1.json#division.hist}
 integrity:
-  order.customer_id: { fk_to: customer.customer_id }
-  order.product_id:  { fk_to: product.product_id }
+  account.PER_ID:  {fk_to: person.PER_ID}
+  bill.ACCT_ID:    {fk_to: account.ACCT_ID}
+  payment.BILL_ID: {fk_to: bill.BILL_ID}
 pii:
   strategy: from_faker
   locale: en_US
@@ -1750,29 +1813,40 @@ function renderLineageSVG(){
       </marker>
       <linearGradient id="g1" x1="0" x2="1"><stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#7c3aed"/></linearGradient>
     </defs>
-    ${node(30,40,'Oracle CC&amp;B','REST API','#7c3aed')}
-    ${node(220,20,'RAW.CUSTOMER','Snowflake','#3b82f6')}
-    ${node(220,120,'RAW.ORDER','Snowflake','#3b82f6')}
-    ${node(220,220,'RAW.PRODUCT','Snowflake','#3b82f6')}
-    ${node(430,20,'stg_customer','dbt','#38bdf8')}
-    ${node(430,120,'stg_order','dbt','#38bdf8')}
-    ${node(430,220,'stg_product','dbt','#38bdf8')}
-    ${node(640,20,'dim_customer','dbt mart','#16a34a')}
-    ${node(640,120,'fct_order','dbt mart','#16a34a')}
-    ${node(640,220,'dim_product','dbt mart','#16a34a')}
-    ${node(820,120,'Power BI','Certified','#f59e0b',true)}
-    ${line(160,58,220,58)}
-    ${line(160,58,220,138)}
-    ${line(160,58,220,238)}
+    ${node(30,150,'Oracle CC&amp;B','REST API','#7c3aed')}
+    ${node(220,20,'RAW.PERSON','Snowflake','#3b82f6')}
+    ${node(220,80,'RAW.ACCOUNT','Snowflake','#3b82f6')}
+    ${node(220,140,'RAW.PREMISE','Snowflake','#3b82f6')}
+    ${node(220,200,'RAW.BILL','Snowflake','#3b82f6')}
+    ${node(220,260,'RAW.PAYMENT','Snowflake','#3b82f6')}
+    ${node(430,20,'stg_ccb__person','dbt','#38bdf8')}
+    ${node(430,80,'stg_ccb__account','dbt','#38bdf8')}
+    ${node(430,140,'stg_ccb__premise','dbt','#38bdf8')}
+    ${node(430,200,'stg_ccb__bill','dbt','#38bdf8')}
+    ${node(430,260,'stg_ccb__payment','dbt','#38bdf8')}
+    ${node(640,60,'dim_customer_360','dbt mart','#16a34a')}
+    ${node(640,150,'fct_bill','dbt mart','#16a34a')}
+    ${node(640,240,'fct_payment','dbt mart','#16a34a')}
+    ${node(820,150,'Power BI','Certified','#f59e0b',true)}
+    ${line(160,168,220,38)}
+    ${line(160,168,220,98)}
+    ${line(160,168,220,158)}
+    ${line(160,168,220,218)}
+    ${line(160,168,220,278)}
     ${line(360,38,430,38)}
-    ${line(360,138,430,138)}
-    ${line(360,238,430,238)}
-    ${line(570,38,640,38)}
-    ${line(570,138,640,138)}
-    ${line(570,238,640,238)}
-    ${line(780,38,820,138)}
-    ${line(780,138,820,138)}
-    ${line(780,238,820,138)}
+    ${line(360,98,430,98)}
+    ${line(360,158,430,158)}
+    ${line(360,218,430,218)}
+    ${line(360,278,430,278)}
+    ${line(570,38,640,78)}
+    ${line(570,98,640,78)}
+    ${line(570,158,640,78)}
+    ${line(570,218,640,168)}
+    ${line(570,278,640,258)}
+    ${line(570,218,640,258)}
+    ${line(780,78,820,168)}
+    ${line(780,168,820,168)}
+    ${line(780,258,820,168)}
   </svg>`;
 }
 function node(x,y,title,sub,color,pill){
@@ -1807,11 +1881,11 @@ mart layers, and is exposed to Power BI as a certified dataset.
 
 ## Downstream consumers
 - Power BI · *Customer 360 — Certified*
-- Reverse-ETL job \`crm_scoring_v2\` (Hightouch)
+- Reverse-ETL job \`billing_alerts_v2\` (Hightouch)
 
 ## Runbook
-1. On freshness alert, inspect \`DP_META.SOURCE_FRESHNESS\`.
-2. On DQ failure, review \`DP_META.DQ_RESULTS\`, filter \`domain='ccb'\`.
+1. On freshness alert, inspect \`DP_META.SOURCE_FRESHNESS\` (source='ORACLE_CCB').
+2. On DQ failure, review \`DP_META.DQ_RESULTS\`, filter \`domain='customer_billing'\`.
 3. Escalation: \`#customer-ops-oncall\`, then customer_ops_coe@coned.com.
 `;
 const EXPOSURE_YML = `# dbt/models/ccb/exposures.yml
@@ -1826,9 +1900,10 @@ exposures:
       name: Customer Operations COE
       email: customer_ops_coe@coned.com
     depends_on:
-      - ref('dim_customer')
-      - ref('dim_product')
-      - ref('fct_order')
+      - ref('dim_customer_360')
+      - ref('dim_meter')
+      - ref('fct_bill')
+      - ref('fct_payment')
 `;
 
 /* ==================================================================
@@ -1871,7 +1946,7 @@ function renderReview(main){
             ['ok','Steward approved PII classification'],
             ['ok','Ops on-call is aware of freshness alert'],
             ['ok','Power BI dataset ownership confirmed'],
-            ['ok','Rollback strategy: revert PR + drop <code>DP_PROD.DEALER_SALES.*</code>'],
+            ['ok','Rollback strategy: revert PR + drop <code>DP_PROD.CCB.*</code>'],
           ])}
         </div>
       </div>
@@ -1893,26 +1968,32 @@ function renderReview(main){
 }
 function filesList(){
   const files = [
-    ['infra/fivetran/oracle-ccb.yaml','+52'],
-    ['infra/fivetran/custom_connector/connector.py','+38'],
+    ['infra/fivetran/oracle-ccb.yaml','+68'],
+    ['infra/fivetran/custom_connector/connector.py','+42'],
     ['infra/snowflake/landing/oracle_ccb.sql','+18'],
-    ['infra/snowflake/masking/oracle_ccb.sql','+29'],
+    ['infra/snowflake/masking/oracle_ccb.sql','+34'],
     ['infra/snowflake/alerts/oracle_ccb.sql','+14'],
-    ['dbt/models/ccb/sources.yml','+41'],
-    ['dbt/models/ccb/staging/stg_ccb__customer.sql','+34'],
-    ['dbt/models/ccb/staging/stg_ccb__order.sql','+29'],
-    ['dbt/models/ccb/staging/stg_ccb__product.sql','+27'],
-    ['dbt/models/ccb/marts/dim_customer.sql','+22'],
-    ['dbt/models/ccb/marts/dim_product.sql','+21'],
-    ['dbt/models/ccb/marts/fct_order.sql','+31'],
-    ['dbt/models/ccb/schema.yml','+118'],
-    ['dbt/models/ccb/marts/schema_tests.yml','+64'],
+    ['dbt/models/ccb/sources.yml','+62'],
+    ['dbt/models/ccb/staging/stg_ccb__person.sql','+29'],
+    ['dbt/models/ccb/staging/stg_ccb__account.sql','+23'],
+    ['dbt/models/ccb/staging/stg_ccb__premise.sql','+18'],
+    ['dbt/models/ccb/staging/stg_ccb__service_agreement.sql','+22'],
+    ['dbt/models/ccb/staging/stg_ccb__meter.sql','+16'],
+    ['dbt/models/ccb/staging/stg_ccb__bill.sql','+24'],
+    ['dbt/models/ccb/staging/stg_ccb__payment.sql','+18'],
+    ['dbt/models/ccb/staging/stg_ccb__customer_contact.sql','+18'],
+    ['dbt/models/ccb/marts/dim_customer_360.sql','+26'],
+    ['dbt/models/ccb/marts/dim_meter.sql','+15'],
+    ['dbt/models/ccb/marts/fct_bill.sql','+26'],
+    ['dbt/models/ccb/marts/fct_payment.sql','+20'],
+    ['dbt/models/ccb/schema.yml','+94'],
+    ['dbt/models/ccb/marts/schema_tests.yml','+52'],
     ['dbt/macros/hash_pii.sql','+11'],
-    ['dq/ge_suites/oracle_ccb.yml','+42'],
-    ['testing/synth/oracle_ccb.yml','+31'],
-    ['docs/ccb/README.md','+62'],
-    ['docs/ccb/lineage.png','+bin'],
-    ['pipelines/azdo-oracle-ccb.yml','+87'],
+    ['dq/ge_suites/oracle_ccb.yml','+38'],
+    ['testing/synth/oracle_ccb.yml','+28'],
+    ['docs/ccb/README.md','+52'],
+    ['docs/ccb/lineage.json','+48'],
+    ['pipelines/azdo-oracle-ccb.yml','+72'],
   ];
   return `<div style="border:1px solid var(--line);border-radius:10px;overflow:hidden">
     <table class="tbl" style="margin:0">
@@ -1968,9 +2049,9 @@ function renderDeploy(main){
     ['Deploy','Cloning repo @ refs/heads/main …','info'],
     ['Deploy','dbt deps: 4 packages · 0 conflicts','ok'],
     ['Deploy','sqlfluff: 0 violations','ok'],
-    ['Deploy','dbt parse: 8 models compiled','ok'],
-    ['Deploy','dbt test dev: 42 tests, 42 passed','ok'],
-    ['Deploy','Synth data loaded → 250,000 rows','ok'],
+    ['Deploy','dbt parse: 12 models compiled','ok'],
+    ['Deploy','dbt test dev: 38 tests, 38 passed','ok'],
+    ['Deploy','Synth data loaded → 1,300 rows','ok'],
     ['Deploy','Integration checks: 6/6 passed','ok'],
     ['Deploy','Awaiting change-advisory approval …','warn'],
   ];
@@ -2051,11 +2132,12 @@ function renderDemocratize(main){
           <tr><td>Steward</td><td class="mono text-xs">shanmugapriya.kandasamy@cognizant.com</td></tr>
           <tr><td>Refresh</td><td>Every 30 min · alert &gt; 15 min lag</td></tr>
           <tr><td>Quality score</td><td><strong>98 / 100</strong></td></tr>
-          <tr><td>Tables</td><td class="mono">dim_customer · dim_product · fct_order</td></tr>
+          <tr><td>Tables</td><td class="mono">dim_customer_360 · dim_meter · fct_bill · fct_payment</td></tr>
           <tr><td>Certifications on</td><td class="mono">Snowflake · Power BI · Hightouch</td></tr>
           <tr><td>Tags</td><td>
             <span class="badge">ccb</span>
-            <span class="badge">revenue</span>
+            <span class="badge">customer-360</span>
+            <span class="badge">billing</span>
             <span class="badge public">certified</span>
             <span class="badge">PII-safe</span>
           </td></tr>
@@ -2068,12 +2150,12 @@ function renderDemocratize(main){
         <table class="tbl">
           <thead><tr><th>Column</th><th>Business term</th></tr></thead>
           <tbody>
-            <tr><td class="mono">fct_order.order_amount</td><td><strong>Gross Order Amount</strong><br><span class="dim text-xs">Total invoiced amount before discounts, USD</span></td></tr>
-            <tr><td class="mono">fct_order.net_amount</td><td><strong>Net Order Amount</strong><br><span class="dim text-xs">order_amount − discount_amount. Basis for revenue reporting</span></td></tr>
-            <tr><td class="mono">fct_order.discount_amount</td><td><strong>Discount</strong><br><span class="dim text-xs">Total dollar discount at the order line</span></td></tr>
-            <tr><td class="mono">fct_order.order_status</td><td><strong>Order Status</strong><br><span class="dim text-xs">NEW / PENDING / SHIPPED / DELIVERED / CANCELLED</span></td></tr>
-            <tr><td class="mono">dim_customer.customer_segment</td><td><strong>Customer Segment</strong><br><span class="dim text-xs">Homeowner / Contractor / Builder / Architect</span></td></tr>
-            <tr><td class="mono">dim_product.product_family</td><td><strong>Product Family</strong><br><span class="dim text-xs">Series / family grouping</span></td></tr>
+            <tr><td class="mono">fct_bill.total_amount</td><td><strong>Billed Amount</strong><br><span class="dim text-xs">Total invoiced amount for the bill cycle, USD</span></td></tr>
+            <tr><td class="mono">fct_bill.bill_state</td><td><strong>Bill State</strong><br><span class="dim text-xs">Derived: complete / past_due / in_review / cancelled</span></td></tr>
+            <tr><td class="mono">fct_payment.pay_amount</td><td><strong>Payment Amount</strong><br><span class="dim text-xs">Dollar amount posted for a payment transaction</span></td></tr>
+            <tr><td class="mono">fct_payment.is_overpayment</td><td><strong>Overpayment Flag</strong><br><span class="dim text-xs">True when a payment exceeds the joined bill total</span></td></tr>
+            <tr><td class="mono">dim_customer_360.customer_class</td><td><strong>Customer Class</strong><br><span class="dim text-xs">RES (residential) / COM (commercial) / IND (industrial)</span></td></tr>
+            <tr><td class="mono">dim_meter.is_active</td><td><strong>Active Meter</strong><br><span class="dim text-xs">Meter is not retired and status flag is AC</span></td></tr>
           </tbody>
         </table>
       </div>
@@ -2097,15 +2179,15 @@ function renderDemocratize(main){
       <h3>Natural-language query examples · LLM-authored</h3>
       <div class="card-sub">A starter pack of questions business analysts commonly ask, translated to SQL. In production these would render inside Atlan or a semantic-layer console.</div>
       <div class="tabs">
-        <div class="tab active" data-tab="ex1">1 · Category revenue</div>
-        <div class="tab" data-tab="ex2">2 · Cancellation rates</div>
-        <div class="tab" data-tab="ex3">3 · Top customers</div>
-        <div class="tab" data-tab="ex4">4 · AOV by segment</div>
+        <div class="tab active" data-tab="ex1">1 · Revenue by borough</div>
+        <div class="tab" data-tab="ex2">2 · Overpayment rate</div>
+        <div class="tab" data-tab="ex3">3 · Top residential accounts</div>
+        <div class="tab" data-tab="ex4">4 · Avg bill by class</div>
       </div>
-      <div data-panel="ex1">${queryExamplePane('What were total dealer sales last month by product category?', "SELECT p.product_category, SUM(o.net_amount) AS revenue\\nFROM fct_order o JOIN dim_product p USING(product_key)\\nWHERE o.order_date >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month'\\n  AND o.order_date <  DATE_TRUNC('month', CURRENT_DATE)\\nGROUP BY 1 ORDER BY revenue DESC;", 'Category-level sales rollup for the most recent full month.')}</div>
-      <div data-panel="ex2" class="hidden">${queryExamplePane('Which dealers had the highest cancellation rate this quarter?', "SELECT dealer_key,\\n       SUM(CASE WHEN order_status='CANCELLED' THEN 1 ELSE 0 END)::FLOAT / COUNT(*) AS cancel_rate\\nFROM fct_order\\nWHERE order_date >= DATE_TRUNC('quarter', CURRENT_DATE)\\nGROUP BY 1 ORDER BY cancel_rate DESC LIMIT 20;", 'Quality signal — helps sales ops identify problem dealers.')}</div>
-      <div data-panel="ex3" class="hidden">${queryExamplePane('Top 10 customers by lifetime net revenue?', 'SELECT c.customer_key, SUM(o.net_amount) AS lifetime_net\\nFROM fct_order o JOIN dim_customer c USING(customer_key)\\nGROUP BY 1 ORDER BY lifetime_net DESC LIMIT 10;', 'For account-based marketing and VIP outreach.')}</div>
-      <div data-panel="ex4" class="hidden">${queryExamplePane('How does average order value differ by customer segment?', 'SELECT c.customer_segment, AVG(o.net_amount) AS aov\\nFROM fct_order o JOIN dim_customer c USING(customer_key)\\nGROUP BY 1 ORDER BY aov DESC;', 'Segment-level pricing insight.')}</div>
+      <div data-panel="ex1">${queryExamplePane('What was total billed revenue last month by service borough (CIS division)?', "SELECT c.cis_division, SUM(b.total_amount) AS revenue\\nFROM fct_bill b JOIN dim_customer_360 c USING(acct_id)\\nWHERE b.bill_dt >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '1 month'\\n  AND b.bill_dt <  DATE_TRUNC('month', CURRENT_DATE)\\nGROUP BY 1 ORDER BY revenue DESC;", 'Territory-level revenue rollup for the most recent full month.')}</div>
+      <div data-panel="ex2" class="hidden">${queryExamplePane('Which accounts had the highest overpayment rate this quarter?', "SELECT acct_id,\\n       SUM(CASE WHEN is_overpayment THEN 1 ELSE 0 END)::FLOAT / COUNT(*) AS overpay_rate\\nFROM fct_payment\\nWHERE pay_dt >= DATE_TRUNC('quarter', CURRENT_DATE)\\nGROUP BY 1 HAVING COUNT(*) >= 3 ORDER BY overpay_rate DESC LIMIT 20;", 'Credit-management signal — accounts with repeat overpayments.')}</div>
+      <div data-panel="ex3" class="hidden">${queryExamplePane('Top 10 residential accounts by lifetime billed amount?', "SELECT c.acct_id, SUM(b.total_amount) AS lifetime_billed\\nFROM fct_bill b JOIN dim_customer_360 c USING(acct_id)\\nWHERE c.customer_class = 'RES'\\nGROUP BY 1 ORDER BY lifetime_billed DESC LIMIT 10;", 'Highest-value residential customers for retention outreach.')}</div>
+      <div data-panel="ex4" class="hidden">${queryExamplePane('How does average bill differ between residential and commercial customers?', "SELECT c.customer_class, AVG(b.total_amount) AS avg_bill\\nFROM fct_bill b JOIN dim_customer_360 c USING(acct_id)\\nGROUP BY 1 ORDER BY avg_bill DESC;", 'Segment-level pricing baseline.')}</div>
     </div>
 
     <div class="grid-2">
@@ -2143,53 +2225,62 @@ function queryExamplePane(question, sql, why){
 const SEMANTIC_YML = `# semantic/metrics/customer_360.yml
 version: 2
 metrics:
-  - name: total_net_revenue
-    label: "Total Net Revenue"
-    model: ref('fct_order')
+  - name: total_billed_revenue
+    label: "Total Billed Revenue"
+    model: ref('fct_bill')
     calculation_method: sum
-    expression: net_amount
+    expression: total_amount
     filters:
-      - {field: order_status, operator: 'in', value: "'SHIPPED','DELIVERED'"}
+      - {field: bill_state, operator: 'in', value: "'complete','past_due'"}
 
-  - name: order_count
-    label: "Orders"
-    model: ref('fct_order')
+  - name: bill_count
+    label: "Bills Issued"
+    model: ref('fct_bill')
     calculation_method: count
-    expression: order_key
+    expression: bill_id
 
-  - name: average_order_value
-    label: "Average Order Value"
+  - name: average_bill
+    label: "Average Bill Amount"
     calculation_method: derived
-    expression: metric('total_net_revenue') / metric('order_count')
+    expression: metric('total_billed_revenue') / metric('bill_count')
 
-  - name: dealer_count
-    label: "Active Dealers"
+  - name: overpayment_rate
+    label: "Overpayment Rate"
+    model: ref('fct_payment')
+    calculation_method: derived
+    expression: sum(case when is_overpayment then 1 else 0 end) / count(pay_id)
+
+  - name: active_customers
+    label: "Active Customers"
+    model: ref('dim_customer_360')
     calculation_method: count_distinct
-    expression: dealer_key
+    expression: acct_id
 `;
 
 const QUICKSTART_MD = `# Customer 360 — Quickstart
 
-This data product contains the certified Customer 360 dataset for Con Edison — customers,
-products, and orders — refreshed every 30 minutes from the source CRM. It's
-governed, PII-masked, and safe for broad analyst use.
+This data product contains the certified Customer 360 dataset for Con Edison —
+persons, accounts, service premises, meters, bills and payments — refreshed
+every 30 minutes from Oracle CC&amp;B. It's governed, PII-masked, and safe
+for broad analyst use.
 
 ## Requesting access
 Access is self-serve via ServiceNow. Search for **customer_360_read** and
 click Request. You'll receive Snowflake and Power BI grants automatically.
 
 ## Key metrics
-- **Total Net Revenue** — sum of net_amount for shipped/delivered orders
-- **Order Count** — count of order_key
-- **Average Order Value (AOV)** — revenue ÷ order count
-- **Active Dealers** — distinct dealers this period
-- **Cancellation Rate** — cancelled ÷ total orders
+- **Total Billed Revenue** — sum of total_amount for complete/past_due bills
+- **Bill Count** — count of bill_id for the period
+- **Average Bill** — total billed revenue ÷ bill count
+- **Overpayment Rate** — payments with is_overpayment=true ÷ total payments
+- **Active Customers** — distinct acct_id in the period
+- **Active Meters** — meters with is_active=true
 
 ## Common questions this data can answer
-- Which product categories are growing month-over-month?
-- Which dealers have the highest cancellation rate?
-- What are my top-10 customers by lifetime revenue?
-- How does AOV differ by customer segment?
+- Which boroughs (CIS divisions) are driving revenue this month?
+- Which accounts have the highest overpayment rate this quarter?
+- Who are our top-10 residential customers by lifetime billed amount?
+- How does average bill differ between RES / COM / IND customer classes?
 
 ## Contact
 - Business owner: Customer Operations COE
@@ -2229,10 +2320,10 @@ function renderProduct(main){
         <div>
           <h4 style="margin:0 0 6px">Consumption endpoints</h4>
           <table class="tbl">
-            <tr><td>Snowflake</td><td class="mono">DP_PROD.DEALER_SALES.*</td></tr>
+            <tr><td>Snowflake</td><td class="mono">DP_PROD.CCB.*</td></tr>
             <tr><td>Power BI</td><td class="mono">Customer 360 — Certified</td></tr>
-            <tr><td>Semantic layer</td><td class="mono">metric://dealer.orders_ttm</td></tr>
-            <tr><td>Reverse ETL</td><td class="mono">hightouch://crm_scoring_v2</td></tr>
+            <tr><td>Semantic layer</td><td class="mono">metric://ccb.billed_revenue_ttm</td></tr>
+            <tr><td>Reverse ETL</td><td class="mono">hightouch://billing_alerts_v2</td></tr>
             <tr><td>Catalog</td><td class="mono">catalog://customer_billing/oracle-ccb</td></tr>
           </table>
         </div>

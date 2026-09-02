@@ -12,7 +12,7 @@
 
 **Scenario:** A data owner submits a request:
 
-> *"Onboard the DealerSalesCRM source into the enterprise data platform. Create
+> *"Onboard the Oracle CC&B source into the enterprise data platform. Create
 > ingestion configurations, Snowflake structures, dbt models, data quality
 > controls, PII classifications, documentation, lineage, test data, and
 > deployment artifacts."*
@@ -66,7 +66,7 @@ Before your teammates start, they need:
 | A browser | Chrome/Edge/Firefox | For the demo UI |
 
 The demo listens on **`localhost:8000`** (UI + agent backend) and
-**`localhost:8001`** (mock DealerSalesCRM REST API). Make sure both ports are
+**`localhost:8001`** (mock Oracle CC&B REST API). Make sure both ports are
 free.
 
 ---
@@ -124,7 +124,7 @@ Open the demo at `http://localhost:8000/`.
 
 *"This is the Engineering Excellence Portal a data owner would use to request
 onboarding of a new source. On the right you can see the pre-populated request
-for **DealerSalesCRM** — a REST API with 3 entities and 30 fields."*
+for **Oracle CC&B** — a REST API with 8 core CC&B tables (~90 fields)."*
 
 Scroll down to the *Source entities* card to show Customer / Order / Product
 with pre-assigned classifications, then to *Expected agent workflow* to show
@@ -180,7 +180,7 @@ under this run's ID. It's ready to `git push` — this is not a mock."*
 ### Step 7 · Show real artifacts (2 min)
 Open the `artifacts/run-<id>/` folder from the last run in File Explorer and
 open a few files to show they're production-grade:
-- [`dbt/marts/fct_order.sql`](artifacts/) — real dbt model
+- [`dbt/marts/fct_bill.sql`](artifacts/) — real dbt model
 - [`pii/masking.sql`](artifacts/) — real Snowflake masking policies
 - [`review/pr_body.md`](artifacts/) — LLM-authored PR summary
 - [`docs/README.md`](artifacts/) — LLM-authored README
@@ -198,10 +198,10 @@ open a few files to show they're production-grade:
 | 4 | **Decline an approval** | On the PII gate modal, click *Request changes* | Pipeline halts with a clear error message. No orphan artifacts. |
 | 5 | **Manual navigation** | While a run is executing, click a previous stage in the sidebar | The stage-view loads instantly for review; the live dock keeps streaming; the pipeline keeps progressing regardless. |
 | 6 | **Re-run** | Click *Restart demo* on the final Data Product page | New `run-<id>` is created; old artifacts are preserved on disk for comparison. |
-| 7 | **Inspect a specific artifact** | Open `artifacts/run-<id>/dbt/marts/fct_order.sql` | Valid dbt SQL with `{{ ref() }}` and `{{ config() }}` calls; passes `dbt parse`. |
+| 7 | **Inspect a specific artifact** | Open `artifacts/run-<id>/dbt/marts/fct_bill.sql` | Valid dbt SQL with `{{ ref() }}` and `{{ config() }}` calls; passes `dbt parse`. |
 | 8 | **Cost/latency check** | `.\start.ps1`, time the run with a stopwatch | LLM tokens (5 calls × ~1-2k tokens ≈ 10k in + 10k out). ~$0.05-$0.10 per run at gpt-4.1 rates. |
 | 9 | **Both servers healthy** | `curl http://localhost:8000/api/status` and `curl http://localhost:8001/v1/health` | Both return `200 OK` with the expected payload. |
-| 10 | **Mock source pagination** | `curl -H "Authorization: Bearer demo-token" http://localhost:8001/v1/customers?offset=0` | Returns 500 rows and a `next` cursor. |
+| 10 | **Mock source pagination** | `curl -H "Authorization: Bearer demo-token" http://localhost:8001/v1/persons?offset=0` | Returns 500 rows and a `next` cursor. |
 
 ---
 
@@ -265,7 +265,7 @@ Expected: `online: True` and `response: PING OK`.
 | `backend/main.py` | FastAPI backend — `/api/onboard`, SSE stream, approvals |
 | `backend/orchestrator.py` | Composes the 10-agent pipeline |
 | `backend/agents/*.py` | Individual agents (one file each) |
-| `mock_source/main.py` | Mock DealerSalesCRM REST API (bearer auth, cursor pagination) |
+| `mock_source/main.py` | Mock Oracle CC&B REST API (bearer auth, cursor pagination) |
 | `mock_source/generate_data.py` | Deterministic Faker generator (seed=42) |
 | `data/` | Generated fake source data (~50 MB) |
 | `artifacts/run-<id>/` | Everything a run produced |

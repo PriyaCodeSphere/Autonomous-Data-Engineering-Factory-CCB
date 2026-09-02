@@ -4,7 +4,7 @@ Interactive prototype demonstrating how multiple AI agents (Cognizant reusable
 patterns) collaborate to onboard a new enterprise data source into a modern
 Snowflake / dbt / Fivetran / Power BI / Azure DevOps ecosystem.
 
-Scenario: **onboard the `DealerSalesCRM` source** and produce a governed, tested,
+Scenario: **onboard the Oracle CC&B source** (Con Edison Customer Care & Billing) and produce a governed, tested,
 documented, deployment-ready data product.
 
 ## Quick start (Windows / PowerShell)
@@ -61,7 +61,7 @@ Autonomous Data Engineering Factory/
 ├── .env / .env.example            # Azure OpenAI credentials (optional)
 │
 ├── mock_source/
-│   ├── generate_data.py           # 5k customers, 50k orders, 1.3k products (seed=42)
+│   ├── generate_data.py           # 1k persons/accts/premises/SAs/meters + 3k bills + 2.5k pays + 1.5k contacts (seed=42)
 │   └── main.py                    # FastAPI mock with cursor pagination + bearer auth
 │
 ├── backend/
@@ -108,7 +108,7 @@ Autonomous Data Engineering Factory/
 | `AZURE_OPENAI_CHAT_DEPLOYMENT` | `gpt-4o`   | Chat deployment name |
 | `AZURE_OPENAI_API_VERSION`     | `2024-08-01-preview` | API version |
 | `APP_PASSWORD`                 | —          | If set, gates the UI behind a sign-in form |
-| `MOCK_SOURCE_PORT`             | `8001`     | Mock DealerSalesCRM port (local dev only) |
+| `MOCK_SOURCE_PORT`             | `8001`     | Mock Oracle CC&B port (local dev only) |
 | `BACKEND_PORT`                 | `8000`     | Agent backend port (local dev only) |
 | `MOCK_SOURCE_TOKEN`            | `demo-token` | Bearer token for the mock source |
 | `OFFLINE_MODE`                 | `0`        | `1` = skip LLM, use deterministic stubs |
